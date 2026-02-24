@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>Morning System</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div class="header-inner">
+        <div class="header-left">
+          <span id="header-date" class="header-date"></span>
+        </div>
+        <div class="header-title">Morning System</div>
+        <div class="header-right">
+          <button id="menu-btn" class="icon-btn" title="Settings">⋯</button>
+        </div>
+      </div>
+      <!-- View tabs -->
+      <div class="tab-bar">
+        <button class="tab active" data-view="checkin">Check-In</button>
+        <button class="tab" data-view="dashboard">Dashboard</button>
+        <button class="tab" data-view="evening">Evening</button>
+      </div>
+    </header>
+
+    <!-- Views -->
+    <main id="main">
+
+      <!-- ── Check-In View ── -->
+      <div id="view-checkin" class="view active">
+        <div id="checkin-status" class="status-bar hidden"></div>
+        <div id="messages" class="messages-container"></div>
+        <div class="input-area">
+          <div class="input-row">
+            <textarea
+              id="chat-input"
+              placeholder="Type a message…"
+              rows="1"
+              autocomplete="off"
+              autocorrect="on"
+              spellcheck="true"
+            ></textarea>
+            <button id="send-btn" class="send-btn" title="Send">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+          <div class="quick-actions">
+            <button class="quick-btn" data-msg="Just tell me what's on top today.">Quick mode</button>
+            <button class="quick-btn" id="gen-dashboard-btn">Generate dashboard →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Dashboard View ── -->
+      <div id="view-dashboard" class="view hidden">
+        <div id="dashboard-content" class="prose-content">
+          <div class="empty-state">
+            <p>No dashboard yet.</p>
+            <p class="muted">Complete your morning check-in, then click "Generate dashboard →" to create it.</p>
+            <button id="gen-dashboard-btn-2" class="btn-primary">Generate dashboard</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Evening Review View ── -->
+      <div id="view-evening" class="view hidden">
+        <div id="evening-messages" class="messages-container"></div>
+        <div class="input-area">
+          <div class="input-row">
+            <textarea
+              id="evening-input"
+              placeholder="How did the day go?"
+              rows="1"
+              autocomplete="off"
+              autocorrect="on"
+              spellcheck="true"
+            ></textarea>
+            <button id="evening-send-btn" class="send-btn" title="Send">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+          <div class="quick-actions">
+            <button class="quick-btn" id="complete-day-btn">Complete day & save summary</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="panel hidden">
+      <div class="panel-header">
+        <h2>Settings</h2>
+        <button id="close-settings" class="icon-btn">✕</button>
+      </div>
+      <div class="panel-body">
+        <section>
+          <h3>Google Accounts</h3>
+          <div id="accounts-list" class="accounts-list"></div>
+          <div class="connect-row">
+            <input id="account-label" type="text" placeholder="Label (e.g. personal, work)" />
+            <button id="connect-google-btn" class="btn-secondary">Connect Google account</button>
+          </div>
+        </section>
+
+        <section>
+          <h3>Mac Agent</h3>
+          <div id="agent-status" class="agent-status">Checking…</div>
+        </section>
+
+        <section>
+          <h3>Tracked Items</h3>
+          <div id="tracked-items-list"></div>
+          <div class="connect-row">
+            <input id="new-tracked-item" type="text" placeholder="Add item to track…" />
+            <button id="add-tracked-btn" class="btn-secondary">Add</button>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div id="settings-overlay" class="overlay hidden"></div>
+
+    <!-- Loading overlay -->
+    <div id="loading" class="loading-overlay hidden">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

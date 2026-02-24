@@ -1,0 +1,17 @@
+{
+  "name": "morning-system-mac-agent",
+  "version": "1.0.0",
+  "description": "Morning System — Mac background agent for Notes/Reminders extraction",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js",
+    "test": "node agent.js --dry-run"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ben.morning-agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Update this path to match your actual node location -->
+        <!-- Run: which node  to find it -->
+        <string>/usr/local/bin/node</string>
+        <string>/Users/ben/morning-system/mac-agent/agent.js</string>
+    </array>
+
+    <!-- Run every 30 minutes -->
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <!-- Also run at startup -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ben/morning-system/mac-agent</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ben/morning-system/mac-agent/agent.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/ben/morning-system/mac-agent/agent.log</string>
+
+    <!-- Keep trying if it crashes -->
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
