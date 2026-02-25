@@ -150,9 +150,11 @@ function buildContextBlock({ dateStr, events, emails, snapshot, trackedItems, pr
     } catch {}
 
     if (notes.length > 0) {
-      lines.push('### Recent Notes (titles)');
+      lines.push('### Recent Notes');
       notes.slice(0, 10).forEach((n) => {
-        lines.push(`- ${n.title || n.name}`);
+        const title = n.title || n.name;
+        const body = n.body ? n.body.trim().slice(0, 200) : '';
+        lines.push(`- **${title}**${body ? `: ${body}` : ''}`);
       });
       lines.push('');
     }

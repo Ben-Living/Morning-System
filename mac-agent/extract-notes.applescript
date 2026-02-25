@@ -1,9 +1,10 @@
 -- Extract notes from Apple Notes app
--- Returns JSON with all notes and specifically the "Active" note
+-- Returns JSON with all notes (title, modified, body snippet) and specifically the "Active" note
 
 on run
 	set noteList to {}
 	set activeNoteContent to ""
+	set noteIndex to 0
 
 	tell application "Notes"
 		set allNotes to notes of default account
@@ -11,6 +12,7 @@ on run
 		repeat with aNote in allNotes
 			set noteTitle to name of aNote
 			set noteDate to modification date of aNote
+			set noteIndex to noteIndex + 1
 
 			-- Check if this is the Active note
 			if noteTitle is "Active" then
@@ -40,10 +42,25 @@ on run
 				set dateStr to dateStr & "-" & d
 			end if
 
-			-- Escape for JSON
+			-- Escape title for JSON
 			set safeTitle to do shell script "echo " & quoted form of noteTitle & " | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g'"
 
-			set noteList to noteList & {"{\"title\":\"" & safeTitle & "\",\"modified\":\"" & dateStr & "\"}"}
+			-- Extract body snippet (first 15 notes only to keep agent fast)
+			set safeBody to ""
+			if noteIndex ≤ 15 then
+				try
+					set rawBody to body of aNote
+					-- Truncate raw HTML before processing to limit shell time
+					if length of rawBody > 2000 then
+						set rawBody to text 1 thru 2000 of rawBody
+					end if
+					set safeBody to do shell script "printf '%s' " & quoted form of rawBody & " | sed 's/<[^>]*>//g' | sed 's/&amp;/\\&/g' | sed 's/&lt;/</g' | sed 's/&gt;/>/g' | sed 's/&nbsp;/ /g' | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g' | tr -d '\\r' | tr '\\n' ' '"
+				on error
+					set safeBody to ""
+				end try
+			end if
+
+			set noteList to noteList & {"{\"title\":\"" & safeTitle & "\",\"modified\":\"" & dateStr & "\",\"body\":\"" & safeBody & "\"}"}
 		end repeat
 	end tell
 
