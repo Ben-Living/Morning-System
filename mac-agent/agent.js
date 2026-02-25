@@ -45,7 +45,7 @@ function logError(msg, err) {
 async function runAppleScript(scriptPath) {
   try {
     const { stdout } = await execFileAsync('osascript', [scriptPath], {
-      timeout: 30000,
+      timeout: 120000,
     });
     return stdout.trim();
   } catch (err) {
