@@ -1,8 +1,10 @@
 -- Extract incomplete reminders from Apple Reminders app
--- Returns JSON array of incomplete reminders
+-- Returns pipe-delimited text: one reminder per line, fields separated by |||
+-- Fields: name|||list|||dueDate
+-- JSON conversion is handled by agent.js
 
 on run
-	set reminderList to {}
+	set output to ""
 
 	tell application "Reminders"
 		set allLists to lists
@@ -37,25 +39,10 @@ on run
 					end if
 				end try
 
-				-- Escape for JSON
-				set safeName to do shell script "echo " & quoted form of rName & " | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g'"
-				set safeList to do shell script "echo " & quoted form of listName & " | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g'"
-
-				set reminderList to reminderList & {"{\"name\":\"" & safeName & "\",\"list\":\"" & safeList & "\",\"dueDate\":\"" & rDueDate & "\"}"}
+				set output to output & rName & "|||" & listName & "|||" & rDueDate & linefeed
 			end repeat
 		end repeat
 	end tell
 
-	-- Build JSON array
-	set remindersJSON to "["
-	set remindersCount to count of reminderList
-	repeat with i from 1 to remindersCount
-		set remindersJSON to remindersJSON & item i of reminderList
-		if i < remindersCount then
-			set remindersJSON to remindersJSON & ","
-		end if
-	end repeat
-	set remindersJSON to remindersJSON & "]"
-
-	return remindersJSON
+	return output
 end run
