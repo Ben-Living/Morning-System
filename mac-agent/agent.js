@@ -80,13 +80,7 @@ async function extractReminders() {
     const result = await runAppleScript(scriptPath);
     if (!result) return [];
 
-    return result
-      .split('\n')
-      .filter(line => line.trim() !== '')
-      .map(line => {
-        const [name, list, dueDate] = line.split('|||');
-        return { name: name || '', list: list || '', dueDate: dueDate || '' };
-      });
+    return JSON.parse(result);
   } catch (err) {
     logError('Reminders extraction failed', err);
     return [];
