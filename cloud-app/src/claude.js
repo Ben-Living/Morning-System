@@ -115,7 +115,7 @@ function buildContextBlock({ dateStr, events, emails, snapshot, trackedItems, pr
   // Notes & Reminders from Mac agent
   if (snapshot) {
     const snapshotAge = DateTime.now().diff(
-      DateTime.fromSQL(snapshot.received_at),
+      DateTime.fromSQL(snapshot.received_at, { zone: 'utc' }),
       'hours'
     ).hours;
 
