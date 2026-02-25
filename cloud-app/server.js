@@ -395,7 +395,7 @@ app.get('/api/snapshot/status', (req, res) => {
   const snapshot = db.getLatestSnapshot();
   if (!snapshot) return res.json({ available: false });
 
-  const ageMs = Date.now() - new Date(snapshot.received_at).getTime();
+  const ageMs = Date.now() - new Date(snapshot.received_at.replace(' ', 'T') + 'Z').getTime();
   res.json({
     available: true,
     received_at: snapshot.received_at,
