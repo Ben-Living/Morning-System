@@ -63,6 +63,10 @@
 
       <!-- ── Dashboard View ── -->
       <div id="view-dashboard" class="view hidden">
+        <div id="chart-container" class="chart-container hidden">
+          <p class="chart-title">Life Wheel</p>
+          <canvas id="life-wheel-canvas"></canvas>
+        </div>
         <div id="dashboard-content" class="prose-content">
           <div class="empty-state">
             <p>No dashboard yet.</p>
@@ -177,6 +181,7 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

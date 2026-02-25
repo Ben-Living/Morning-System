@@ -322,6 +322,27 @@ textarea::placeholder { color: var(--text-faint); }
   -webkit-overflow-scrolling: touch;
 }
 
+/* ── Life Wheel Chart ─────────────────────────────────────────────────────── */
+.chart-container {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 20px 12px;
+}
+
+.chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+#life-wheel-canvas {
+  max-height: 260px;
+  width: 100% !important;
+}
+
 .prose-content {
   padding: 20px 16px 40px;
   max-width: 100%;

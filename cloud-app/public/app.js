@@ -495,6 +495,115 @@ function switchView(view) {
   if (view === 'evening' && !state.eveningStarted) {
     startEveningReview();
   }
+
+  // Render/refresh life wheel chart when switching to dashboard
+  if (view === 'dashboard') {
+    fetchAndRenderChart();
+  }
+}
+
+// ── Life Wheel Radar Chart ──────────────────────────────────────────────────
+
+let lifeWheelChart = null;
+
+const CHART_LABELS = [
+  'Health', 'Career', 'Finances', 'Relations',
+  'Growth', 'Fun/Rec', 'Environment', 'Spirit',
+  'Contribution', 'Intimacy',
+];
+
+const CHART_FULL_CATEGORIES = [
+  'Health and Well-being', 'Career or Work', 'Finances', 'Relationships',
+  'Personal Growth', 'Fun and Recreation', 'Physical Environment',
+  'Spirituality or Faith', 'Contribution and Service', 'Love and Intimacy',
+];
+
+const CHART_COLORS = [
+  { line: '#2d5a3d', fill: 'rgba(45,90,61,0.15)' },
+  { line: '#e67e22', fill: 'rgba(230,126,34,0.10)' },
+  { line: '#3498db', fill: 'rgba(52,152,219,0.10)' },
+];
+
+async function fetchAndRenderChart() {
+  const canvas = document.getElementById('life-wheel-canvas');
+  const container = document.getElementById('chart-container');
+  if (!canvas || !container) return;
+
+  try {
+    const { scores } = await get('/api/scores?days=14');
+    if (!scores || scores.length === 0) {
+      container.classList.add('hidden');
+      return;
+    }
+
+    // Group by date, prefer morning scores, take last 3 unique dates
+    const dateMap = new Map();
+    scores.forEach((entry) => {
+      if (!dateMap.has(entry.date)) dateMap.set(entry.date, {});
+      // morning overwrites if both exist
+      if (!dateMap.get(entry.date).morning || entry.phase === 'morning') {
+        dateMap.get(entry.date)[entry.phase] = entry;
+      }
+    });
+
+    const sortedDates = [...dateMap.keys()].sort().reverse().slice(0, 3);
+    if (sortedDates.length === 0) {
+      container.classList.add('hidden');
+      return;
+    }
+
+    container.classList.remove('hidden');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const datasets = sortedDates.map((date, idx) => {
+      const dayData = dateMap.get(date);
+      const entry = dayData.morning || dayData.evening || Object.values(dayData)[0];
+      const data = CHART_FULL_CATEGORIES.map((cat) => entry.scores[cat] ?? 0);
+      const label = date === today ? 'Today' : date === sortedDates[1] && idx === 1 ? 'Yesterday' : date;
+
+      return {
+        label,
+        data,
+        borderColor: CHART_COLORS[idx].line,
+        backgroundColor: CHART_COLORS[idx].fill,
+        pointBackgroundColor: CHART_COLORS[idx].line,
+        pointRadius: 3,
+        borderWidth: idx === 0 ? 2.5 : 1.5,
+      };
+    });
+
+    if (lifeWheelChart) {
+      lifeWheelChart.destroy();
+      lifeWheelChart = null;
+    }
+
+    lifeWheelChart = new Chart(canvas, {
+      type: 'radar',
+      data: { labels: CHART_LABELS, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        scales: {
+          r: {
+            min: 0,
+            max: 10,
+            ticks: { stepSize: 2, font: { size: 10 }, backdropColor: 'transparent' },
+            pointLabels: { font: { size: 11 } },
+            grid: { color: 'rgba(0,0,0,0.07)' },
+            angleLines: { color: 'rgba(0,0,0,0.07)' },
+          },
+        },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { font: { size: 12 }, padding: 12, boxWidth: 12 },
+          },
+        },
+      },
+    });
+  } catch (err) {
+    console.error('Chart render error:', err);
+  }
 }
 
 // ── Settings Panel ─────────────────────────────────────────────────────────
@@ -671,6 +780,10 @@ async function submitScores() {
     });
     closeScoreModal();
     showStatus('Scores saved.', false);
+    // Refresh chart if dashboard is currently visible
+    if (state.currentView === 'dashboard') {
+      fetchAndRenderChart();
+    }
   } catch (err) {
     alert('Error saving scores: ' + err.message);
   }

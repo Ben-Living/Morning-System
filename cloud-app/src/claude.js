@@ -296,37 +296,80 @@ async function* streamChat({ messages, contextBlock }) {
 // ─── Dashboard Generation ─────────────────────────────────────────────────────
 
 async function generateDashboard({ conversationMessages, contextBlock }) {
-  const prompt = `Based on our morning check-in conversation and the context provided, please generate today's dashboard.
+  const prompt = `Generate today's dashboard. Use the EXACT data from the context block — do not summarise vaguely, do not say "check your calendar", do not omit items. Every section must be fully populated from the provided data.
 
-Format it as clean markdown with these sections:
-## Today's Priorities
-(The 2-4 things that actually matter today, in order of importance)
+Output the sections in EXACTLY this order with EXACTLY these headings:
 
-## Coming Up Today
-(Calendar events, formatted clearly)
-
-## Emails Needing Attention
-(Only the ones that actually need a response or action — skip FYIs)
-
-## Starred Emails to Review
-(Any starred emails worth actioning — flag ones that look already resolved)
-
-## Reminders
-(Outstanding items from Apple Reminders)
-
-## Active Note
-(Key content from the Active note, if present)
-
-## Open Loops & Tracked Items
-(Things that are sitting unresolved — surfaced without pressure)
+---
 
 ## Current Aim
-(State the aim explicitly if one is set, with a one-line note on today's practice)
 
-## One Thing to Remember
-(A single grounding thought, insight, or intention from our conversation)
+State the aim verbatim as it appears in context. Include the heart wish if present. If no active aim is set, write: _No active aim set._
 
-Be concise. This dashboard should be scannable in 30 seconds.`;
+---
+
+## Life Wheel Scores — Morning
+
+List all 10 categories with today's morning scores if they appear in context. Format each as:
+- Category: N/10
+
+If no scores are recorded yet, write: _No scores recorded yet today — use the "Score day" button after check-in._
+
+---
+
+## Calendar
+
+List EVERY event from today's calendar with its exact time and full title. Do not compress, skip, or say "you have meetings". Format each line as:
+- HH:MM — Event title @ Location (if any)
+
+If no calendar events, write: _No events today._
+
+---
+
+## Top 3 Priorities
+
+Based on the check-in conversation, name exactly three priorities in order of importance. Be specific — "Call James about the proposal" not "follow up on communications".
+
+---
+
+## Starred Emails
+
+List all starred emails from context. For any flagged as potentially resolved, add: _(may be resolved — worth unstarring?)_
+
+If none, write: _No starred emails._
+
+---
+
+## Reminders
+
+List the top 10 most relevant incomplete reminders, grouped by list name. Format:
+
+**[List Name]**
+- Reminder item
+
+If none, write: _No incomplete reminders._
+
+---
+
+## Emails Needing Attention
+
+List only unread emails that require a response or action — skip newsletters and FYIs. For each, write one sentence on what action is needed.
+
+If none, write: _Inbox clear._
+
+---
+
+## Carry-forwards
+
+From the "From Yesterday" section in context, extract anything explicitly deferred or carried forward. If none, write: _Nothing carried forward._
+
+---
+
+## State and Intention
+
+Write 2–3 sentences: first a brief somatic or emotional note on where Ben is today based on the check-in conversation; then a single developmental intention for the day grounded in what came up.
+
+---`;
 
   const messagesToSend = [
     { role: 'user', content: `<context>\n${contextBlock}\n</context>` },
@@ -336,7 +379,7 @@ Be concise. This dashboard should be scannable in 30 seconds.`;
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 1800,
+    max_tokens: 2500,
     system: SYSTEM_PROMPT,
     messages: messagesToSend,
   });
