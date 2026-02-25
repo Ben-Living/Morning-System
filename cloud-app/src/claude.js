@@ -30,13 +30,14 @@ You show up as warm, perceptive, practically oriented, and gently challenging wh
 - Listen for what's alive, what's heavy, what's exciting
 - Help him name his top priorities for the day — not a long list, but what really matters
 - Notice when his Type 1 patterns are running (self-criticism, trying to do it all perfectly, anxiety about being wrong) and name this warmly when useful
-- Surface anything from his calendar or emails that deserves his attention
+- Surface anything from his calendar, emails, and incomplete reminders that deserves his attention — treat reminders as real commitments
 - Ask about tracked items that have appeared in previous sessions without resolution
 - If he says "just tell me what's on top today", offer a concise, grounded minimal check-in — no need to go through everything
+- If there is a current aim set, make a brief natural reference to it early in the check-in — always state the aim explicitly so Ben can confirm you are aligned on it. If he hasn't mentioned it by the end of the conversation, gently ask how the practice is going.
 
 **In the dashboard:**
 - Synthesise the check-in into a clean daily dashboard
-- Sections: Today's Priorities, What's Coming Up (calendar), Email Attention Needed, Active Note, Open Loops & Tracked Items
+- Sections: Today's Priorities, What's Coming Up (calendar), Email Attention Needed, Reminders, Active Note, Open Loops & Tracked Items, Current Aim
 - Tone: clear, honest, anchoring — like a well-organised desk before a day's work
 
 **In the evening review:**
@@ -45,6 +46,14 @@ You show up as warm, perceptive, practically oriented, and gently challenging wh
 - Note any items that should be tracked forward to tomorrow
 - Generate a concise summary that will be injected into tomorrow's morning context
 - Be warm and non-judgmental — the point is integration, not performance review
+- If there is a current aim: include a one-line reflection on whether the practice happened today. Always state the aim explicitly. After several days in a row with no practice, shift from prompting to gentle inquiry — ask what is getting in the way rather than continuing to remind.
+- **Aim formation:** If there is no current active aim, OR the existing aim has passed its end date, OR it has been held without renewal for more than 2 weeks — initiate the aim formation process naturally. This follows the Ridhwan/Diamond Approach structure: start by asking Ben what his heart is most wanting or longing for right now. Sit with that. Let the aim emerge from the heart wish, not from the mind's agenda. Do NOT suggest an aim on Ben's behalf — your role is to hold space for it to emerge. Once an aim has been articulated, invite Ben to give it a start date, an end date, and optionally someone to be accountable to. Then tell Ben to use the Aims panel in Settings to formally save it.
+
+## Life Wheel Scoring
+
+Ben scores himself 1-10 across ten life areas. These scores are provided in context when available. Look for patterns across recent sessions — for example, if Relationships scores have been below 5 for two weeks, surface this gently. Do not make the scores feel like a performance audit; treat them as honest data about where life's energy is flowing. After the check-in or evening review conversation winds down, suggest Ben record his scores via the "Score Day" button.
+
+Life wheel categories: Health and Well-being, Career or Work, Finances, Relationships, Personal Growth, Fun and Recreation, Physical Environment, Spirituality or Faith, Contribution and Service, Love and Intimacy.
 
 ## Accountability
 
@@ -62,11 +71,24 @@ When something appears as an unresolved tracked item across multiple sessions, n
 
 ## Context
 
-You will receive a context block at the start of each session. Use it to personalise your responses. Don't read every item aloud back to Ben — let the context inform your awareness, not your recitation.`;
+You will receive a context block at the start of each session. Use it to personalise your responses. Don't read every item aloud back to Ben — let the context inform your awareness, not your recitation.
+
+When referencing the current aim, ALWAYS state it explicitly (e.g. "your current aim — [exact aim statement] — ...") so Ben can confirm you are both aligned on what it is.`;
 
 // ─── Context Builder ──────────────────────────────────────────────────────────
 
-function buildContextBlock({ dateStr, events, emails, snapshot, trackedItems, previousSummary }) {
+function buildContextBlock({
+  dateStr,
+  events,
+  emails,
+  starredEmails,
+  snapshot,
+  trackedItems,
+  previousSummary,
+  lifeWheelScores,
+  currentAim,
+  needsAimFormation,
+}) {
   const now = DateTime.now().setZone(NZ_TZ);
   const lines = [];
 
@@ -82,28 +104,76 @@ function buildContextBlock({ dateStr, events, emails, snapshot, trackedItems, pr
     lines.push('');
   }
 
+  // Current Aim
+  if (currentAim) {
+    const aimAge = DateTime.fromISO(dateStr).diff(DateTime.fromISO(currentAim.start_date), 'days').days;
+    lines.push('### Current Aim');
+    lines.push(`**"${currentAim.aim_statement}"**`);
+    if (currentAim.heart_wish) {
+      lines.push(`_Heart wish: "${currentAim.heart_wish}"_`);
+    }
+    lines.push(`Started: ${currentAim.start_date}${currentAim.end_date ? ` · Ends: ${currentAim.end_date}` : ''}${currentAim.accountability_person ? ` · Accountable to: ${currentAim.accountability_person}` : ''}`);
+    lines.push(`Days held: ${Math.max(0, Math.round(aimAge))}`);
+    lines.push('');
+  } else if (needsAimFormation) {
+    lines.push('### Aim Status');
+    lines.push('_No active aim. Consider initiating aim formation during the evening review._');
+    lines.push('');
+  }
+
+  // Life wheel scores (recent pattern)
+  if (lifeWheelScores && lifeWheelScores.length > 0) {
+    lines.push('### Recent Life Wheel Scores (last 14 days)');
+    // Show most recent score set + highlight low areas
+    const recent = lifeWheelScores.slice(0, 5);
+    recent.forEach((entry) => {
+      const scoreStr = Object.entries(entry.scores)
+        .map(([cat, score]) => `${cat}: ${score}`)
+        .join(', ');
+      lines.push(`- **${entry.date}** (${entry.phase}): ${scoreStr}`);
+    });
+
+    // Pattern analysis: find categories averaging below 5 across all entries
+    const categoryTotals = {};
+    const categoryCounts = {};
+    lifeWheelScores.forEach((entry) => {
+      Object.entries(entry.scores).forEach(([cat, score]) => {
+        categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(score);
+        categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+      });
+    });
+    const lowAreas = Object.entries(categoryTotals)
+      .map(([cat, total]) => ({ cat, avg: total / categoryCounts[cat] }))
+      .filter(({ avg }) => avg < 5)
+      .sort((a, b) => a.avg - b.avg);
+    if (lowAreas.length > 0) {
+      lines.push(`_Pattern alert — categories averaging below 5: ${lowAreas.map(({ cat, avg }) => `${cat} (avg ${avg.toFixed(1)})`).join(', ')}_`);
+    }
+    lines.push('');
+  }
+
   // Calendar events
   if (events && events.length > 0) {
-    lines.push('### Today\'s Calendar');
+    lines.push("### Today's Calendar");
     events.forEach((e) => {
       const time = e.isAllDay ? '(all day)' : e.startFormatted;
       lines.push(`- ${time}: **${e.summary}**${e.location ? ` @ ${e.location}` : ''}`);
     });
     lines.push('');
   } else {
-    lines.push('### Today\'s Calendar');
+    lines.push("### Today's Calendar");
     lines.push('No events found (or calendar not connected).');
     lines.push('');
   }
 
-  // Emails
+  // Unread Emails (72h)
   if (emails && emails.length > 0) {
-    lines.push('### Unread Emails (last 24h)');
-    emails.slice(0, 10).forEach((e) => {
+    lines.push('### Unread Emails (last 72h)');
+    emails.slice(0, 12).forEach((e) => {
       lines.push(`- **${e.from}**: "${e.subject}" — ${e.snippet.slice(0, 100)}`);
     });
-    if (emails.length > 10) {
-      lines.push(`  _(+ ${emails.length - 10} more)_`);
+    if (emails.length > 12) {
+      lines.push(`  _(+ ${emails.length - 12} more)_`);
     }
     lines.push('');
   } else {
@@ -112,10 +182,23 @@ function buildContextBlock({ dateStr, events, emails, snapshot, trackedItems, pr
     lines.push('');
   }
 
+  // Starred Emails
+  if (starredEmails && starredEmails.length > 0) {
+    lines.push('### Starred Emails (last 3 weeks)');
+    starredEmails.slice(0, 15).forEach((e) => {
+      const resolvedFlag = e.looksResolved ? ' ⚑ _may be resolved — worth checking whether to unstar_' : '';
+      lines.push(`- **${e.from}**: "${e.subject}" — ${e.snippet.slice(0, 80)}${resolvedFlag}`);
+    });
+    if (starredEmails.length > 15) {
+      lines.push(`  _(+ ${starredEmails.length - 15} more starred)_`);
+    }
+    lines.push('');
+  }
+
   // Notes & Reminders from Mac agent
   if (snapshot) {
     const snapshotAge = DateTime.now().diff(
-      DateTime.fromSQL(snapshot.received_at, { zone: 'utc' }),
+      DateTime.fromISO(snapshot.received_at),
       'hours'
     ).hours;
 
@@ -126,10 +209,11 @@ function buildContextBlock({ dateStr, events, emails, snapshot, trackedItems, pr
 
     if (snapshot.active_note) {
       lines.push('### Active Note');
-      lines.push(snapshot.active_note.slice(0, 1000));
+      lines.push(snapshot.active_note.slice(0, 1500));
       lines.push('');
     }
 
+    // Reminders — shown prominently as actionable items
     let reminders = [];
     try {
       reminders = JSON.parse(snapshot.reminders || '[]');
@@ -137,22 +221,27 @@ function buildContextBlock({ dateStr, events, emails, snapshot, trackedItems, pr
 
     if (reminders.length > 0) {
       lines.push('### Incomplete Reminders');
+      lines.push('_These are outstanding commitments from Apple Reminders:_');
       reminders.slice(0, 20).forEach((r) => {
         const due = r.dueDate ? ` (due ${r.dueDate})` : '';
-        lines.push(`- ${r.name}${due}`);
+        const list = r.list ? ` [${r.list}]` : '';
+        lines.push(`- ${r.name}${due}${list}`);
       });
       lines.push('');
     }
 
+    // Notes list with body snippets
     let notes = [];
     try {
       notes = JSON.parse(snapshot.notes || '[]');
     } catch {}
 
     if (notes.length > 0) {
-      lines.push('### Recent Notes (titles)');
-      notes.slice(0, 10).forEach((n) => {
-        lines.push(`- ${n.title || n.name}`);
+      lines.push('### Notes (recent)');
+      notes.slice(0, 12).forEach((n) => {
+        const title = n.title || n.name;
+        const body = n.body ? ` — ${n.body.slice(0, 120)}` : '';
+        lines.push(`- **${title}**${body}`);
       });
       lines.push('');
     }
@@ -180,15 +269,6 @@ function buildContextBlock({ dateStr, events, emails, snapshot, trackedItems, pr
 // ─── Streaming Chat ────────────────────────────────────────────────────────────
 
 async function* streamChat({ messages, contextBlock }) {
-  // Prepend context as a system-level user turn
-  const fullMessages = [
-    { role: 'user', content: `<context>\n${contextBlock}\n</context>\n\nGood morning.` },
-    { role: 'assistant', content: "Good morning, Ben. Let me take a moment with your context..." },
-    ...messages,
-  ];
-
-  // If there are no real messages yet (fresh session), just start fresh
-  // The context injection is always sent
   const messagesToSend = messages.length > 0
     ? [
         { role: 'user', content: `<context>\n${contextBlock}\n</context>` },
@@ -228,11 +308,20 @@ Format it as clean markdown with these sections:
 ## Emails Needing Attention
 (Only the ones that actually need a response or action — skip FYIs)
 
+## Starred Emails to Review
+(Any starred emails worth actioning — flag ones that look already resolved)
+
+## Reminders
+(Outstanding items from Apple Reminders)
+
 ## Active Note
 (Key content from the Active note, if present)
 
 ## Open Loops & Tracked Items
 (Things that are sitting unresolved — surfaced without pressure)
+
+## Current Aim
+(State the aim explicitly if one is set, with a one-line note on today's practice)
 
 ## One Thing to Remember
 (A single grounding thought, insight, or intention from our conversation)
@@ -247,7 +336,7 @@ Be concise. This dashboard should be scannable in 30 seconds.`;
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 1500,
+    max_tokens: 1800,
     system: SYSTEM_PROMPT,
     messages: messagesToSend,
   });
@@ -269,26 +358,17 @@ Looking back at what came up in our morning check-in${morningMessages.length > 0
 
 Take your time. This is for integration, not performance review.`;
 
-  const messagesToSend = [
-    { role: 'user', content: `<context>\n${contextBlock}\n</context>` },
-    ...(morningMessages.length > 0 ? [
-      { role: 'user', content: '(Earlier this morning we had a check-in. Here\'s what came up:)' },
-      ...morningMessages,
-    ] : []),
-    ...conversationMessages,
-    ...(conversationMessages.length === 0 ? [{ role: 'user', content: openingPrompt }] : []),
-  ];
-
-  const finalMessages = conversationMessages.length === 0
-    ? [
-        { role: 'user', content: `<context>\n${contextBlock}\n</context>${morningMessages.length > 0 ? '\n\n(We had a morning check-in today.)' : ''}` },
-      ]
-    : messagesToSend;
-
   // If evening review is just starting, send the opening
   const streamMessages = conversationMessages.length === 0
     ? [{ role: 'user', content: `<context>\n${contextBlock}\n</context>\n\n${openingPrompt}` }]
-    : messagesToSend;
+    : [
+        { role: 'user', content: `<context>\n${contextBlock}\n</context>` },
+        ...(morningMessages.length > 0 ? [
+          { role: 'user', content: "(Earlier this morning we had a check-in. Here's what came up:)" },
+          ...morningMessages,
+        ] : []),
+        ...conversationMessages,
+      ];
 
   const stream = client.messages.stream({
     model: MODEL,
@@ -318,12 +398,14 @@ Include:
 - What was completed vs. deferred
 - Anything important to carry forward
 - Any emotional or developmental themes that were alive
+- Life wheel scores if they came up
+- Aim practice: was it engaged with today?
 
 Keep it under 300 words. Write it as if briefing tomorrow's version of yourself.`;
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 400,
+    max_tokens: 500,
     system: SYSTEM_PROMPT,
     messages: [
       { role: 'user', content: `<context>\n${contextBlock}\n</context>` },

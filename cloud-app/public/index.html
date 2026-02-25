@@ -55,6 +55,7 @@
           </div>
           <div class="quick-actions">
             <button class="quick-btn" data-msg="Just tell me what's on top today.">Quick mode</button>
+            <button class="quick-btn" id="score-morning-btn">Score day →</button>
             <button class="quick-btn" id="gen-dashboard-btn">Generate dashboard →</button>
           </div>
         </div>
@@ -92,6 +93,7 @@
             </button>
           </div>
           <div class="quick-actions">
+            <button class="quick-btn" id="score-evening-btn">Score day →</button>
             <button class="quick-btn" id="complete-day-btn">Complete day & save summary</button>
           </div>
         </div>
@@ -128,8 +130,45 @@
             <button id="add-tracked-btn" class="btn-secondary">Add</button>
           </div>
         </section>
+
+        <section>
+          <h3>Current Aim</h3>
+          <div id="aim-display"></div>
+          <div id="aim-form" class="aim-form hidden">
+            <input id="aim-heart-wish" type="text" placeholder="Heart wish (what your heart is longing for)" />
+            <textarea id="aim-statement" placeholder="Aim statement (what you are practising)" rows="2"></textarea>
+            <div class="aim-form-row">
+              <input id="aim-start-date" type="date" title="Start date" />
+              <input id="aim-end-date" type="date" title="End date (optional)" />
+            </div>
+            <input id="aim-accountability" type="text" placeholder="Accountability person (optional)" />
+            <div class="connect-row">
+              <button id="aim-save-btn" class="btn-secondary">Save aim</button>
+              <button id="aim-cancel-btn" class="btn-secondary">Cancel</button>
+            </div>
+          </div>
+          <div class="connect-row" id="aim-actions">
+            <button id="aim-new-btn" class="btn-secondary">Set new aim</button>
+          </div>
+        </section>
       </div>
     </div>
+
+    <!-- Life Wheel Scoring Modal -->
+    <div id="score-modal" class="modal hidden">
+      <div class="modal-inner">
+        <div class="modal-header">
+          <h2>Life Wheel Scores</h2>
+          <button id="score-modal-close" class="icon-btn">✕</button>
+        </div>
+        <p class="muted" style="font-size:14px;margin-bottom:16px">Rate each area 1–10 based on how it feels right now.</p>
+        <div id="score-sliders"></div>
+        <div class="modal-footer">
+          <button id="score-submit-btn" class="btn-primary">Save scores</button>
+        </div>
+      </div>
+    </div>
+    <div id="score-modal-overlay" class="overlay hidden"></div>
     <div id="settings-overlay" class="overlay hidden"></div>
 
     <!-- Loading overlay -->
