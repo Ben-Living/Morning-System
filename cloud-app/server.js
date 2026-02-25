@@ -4,7 +4,6 @@ const session = require('express-session');
 const cors = require('cors');
 const path = require('path');
 const { DateTime } = require('luxon');
-const { google } = require('googleapis');
 
 const db = require('./src/database');
 const gmail = require('./src/gmail');
@@ -44,52 +43,66 @@ function getNZDateStr() {
 }
 
 async function buildContext(dateStr) {
-  const [calEvents, emailData, snapshot, trackedItems] = await Promise.all([
+  const [calEvents, emailData, snapshot, trackedItems, lifeWheelScores, currentAim] = await Promise.all([
     calendar.fetchAllAccountsEvents(dateStr),
     gmail.fetchAllAccountsEmails(),
-    Promise.resolve(db.getLatestSnapshot()),
-    Promise.resolve(db.getUnresolvedTrackedItems()),
+    db.getLatestSnapshot(),
+    db.getUnresolvedTrackedItems(),
+    db.getLatestLifeWheelScores(14),
+    db.getCurrentAim(),
   ]);
 
   // Get previous session summary
-  const recent = db.getRecentSessions(7);
+  const recent = await db.getRecentSessions(7);
   const previousSession = recent.find((s) => s.date < dateStr && s.summary);
   const previousSummary = previousSession ? previousSession.summary : null;
+
+  // Check if aim formation is needed
+  let needsAimFormation = false;
+  if (!currentAim) {
+    needsAimFormation = true;
+  } else if (currentAim.end_date && currentAim.end_date < dateStr) {
+    needsAimFormation = true;
+  } else if (currentAim.start_date) {
+    const aimAge = DateTime.fromISO(dateStr).diff(DateTime.fromISO(currentAim.start_date), 'days').days;
+    if (aimAge > 14) needsAimFormation = true;
+  }
 
   const contextBlock = claude.buildContextBlock({
     dateStr,
     events: calEvents,
     emails: emailData.emails,
+    starredEmails: emailData.starredEmails,
     snapshot,
     trackedItems,
     previousSummary,
+    lifeWheelScores,
+    currentAim,
+    needsAimFormation,
   });
 
-  return { contextBlock, calEvents, emails: emailData.emails, snapshot, trackedItems };
+  return { contextBlock, calEvents, emails: emailData.emails, starredEmails: emailData.starredEmails, snapshot, trackedItems };
 }
 
 // ─── Routes: Static & Auth ────────────────────────────────────────────────────
 
-// Serve app
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Initiate Google OAuth
 app.get('/auth/google', (req, res) => {
   const label = req.query.label || '';
   const url = gmail.getAuthUrl(label);
   res.redirect(url);
 });
 
-// OAuth callback
 app.get('/auth/google/callback', async (req, res) => {
   const { code, state } = req.query;
   if (!code) return res.redirect('/?error=no_code');
 
   try {
     const { tokens, email } = await gmail.exchangeCodeForTokens(code);
-    db.saveGoogleToken(
+    await db.saveGoogleToken(
       email,
       state || null,
       tokens.access_token,
@@ -103,9 +116,8 @@ app.get('/auth/google/callback', async (req, res) => {
   }
 });
 
-// List connected accounts
-app.get('/api/accounts', (req, res) => {
-  const tokens = db.getGoogleTokens();
+app.get('/api/accounts', async (req, res) => {
+  const tokens = await db.getGoogleTokens();
   res.json({
     accounts: tokens.map((t) => ({
       email: t.account_email,
@@ -115,30 +127,27 @@ app.get('/api/accounts', (req, res) => {
   });
 });
 
-// Disconnect an account
-app.delete('/api/accounts/:email', (req, res) => {
-  db.deleteGoogleToken(req.params.email);
+app.delete('/api/accounts/:email', async (req, res) => {
+  await db.deleteGoogleToken(req.params.email);
   res.json({ ok: true });
 });
 
 // ─── Routes: Session ──────────────────────────────────────────────────────────
 
-// Get or create today's session
-app.get('/api/session/today', (req, res) => {
+app.get('/api/session/today', async (req, res) => {
   const dateStr = getNZDateStr();
-  let session = db.getTodaySession(dateStr);
+  let session = await db.getTodaySession(dateStr);
   if (!session) {
-    session = db.createSession(dateStr);
+    session = await db.createSession(dateStr);
   }
-  const messages = db.getSessionMessages(session.id);
+  const messages = await db.getSessionMessages(session.id);
   res.json({ session, messages });
 });
 
-// Get session by date
-app.get('/api/session/:date', (req, res) => {
-  const session = db.getTodaySession(req.params.date);
+app.get('/api/session/:date', async (req, res) => {
+  const session = await db.getTodaySession(req.params.date);
   if (!session) return res.status(404).json({ error: 'Session not found' });
-  const messages = db.getSessionMessages(session.id);
+  const messages = await db.getSessionMessages(session.id);
   res.json({ session, messages });
 });
 
@@ -152,6 +161,7 @@ app.get('/api/context', async (req, res) => {
       dateStr,
       calEvents: ctx.calEvents,
       emails: ctx.emails,
+      starredEmails: ctx.starredEmails,
       snapshot: ctx.snapshot ? {
         received_at: ctx.snapshot.received_at,
         active_note: ctx.snapshot.active_note,
@@ -174,24 +184,20 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'message and sessionId required' });
   }
 
-  const sessionRow = db.db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  const sessionRow = await db.getSessionById(sessionId);
   if (!sessionRow) return res.status(404).json({ error: 'Session not found' });
 
-  // Save user message
-  db.addMessage(sessionId, 'user', message);
+  await db.addMessage(sessionId, 'user', message);
 
-  // Build context
   const { contextBlock } = await buildContext(sessionRow.date);
 
-  // Get conversation history (exclude the message just saved)
-  const allMessages = db.getSessionMessages(sessionId);
+  const allMessages = await db.getSessionMessages(sessionId);
   const historyMessages = allMessages.slice(0, -1).map((m) => ({
     role: m.role,
     content: m.content,
   }));
   historyMessages.push({ role: 'user', content: message });
 
-  // Set up SSE
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -208,8 +214,7 @@ app.post('/api/chat', async (req, res) => {
       res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
     }
 
-    // Save assistant response
-    db.addMessage(sessionId, 'assistant', fullResponse);
+    await db.addMessage(sessionId, 'assistant', fullResponse);
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
   } catch (err) {
     console.error('Chat stream error:', err);
@@ -225,11 +230,10 @@ app.post('/api/session/open', async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
 
-  const sessionRow = db.db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  const sessionRow = await db.getSessionById(sessionId);
   if (!sessionRow) return res.status(404).json({ error: 'Session not found' });
 
-  // Only open if no messages yet
-  const existing = db.getSessionMessages(sessionId);
+  const existing = await db.getSessionMessages(sessionId);
   if (existing.length > 0) {
     return res.status(400).json({ error: 'Session already has messages' });
   }
@@ -249,7 +253,7 @@ app.post('/api/session/open', async (req, res) => {
       res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
     }
 
-    db.addMessage(sessionId, 'assistant', fullResponse);
+    await db.addMessage(sessionId, 'assistant', fullResponse);
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
   } catch (err) {
     console.error('Open session error:', err);
@@ -265,16 +269,15 @@ app.post('/api/dashboard/generate', async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
 
-  const sessionRow = db.db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  const sessionRow = await db.getSessionById(sessionId);
   if (!sessionRow) return res.status(404).json({ error: 'Session not found' });
 
-  // Return cached if already generated
   if (sessionRow.dashboard) {
     return res.json({ dashboard: sessionRow.dashboard, cached: true });
   }
 
   const { contextBlock } = await buildContext(sessionRow.date);
-  const messages = db.getSessionMessages(sessionId).map((m) => ({
+  const messages = (await db.getSessionMessages(sessionId)).map((m) => ({
     role: m.role,
     content: m.content,
   }));
@@ -284,7 +287,7 @@ app.post('/api/dashboard/generate', async (req, res) => {
       conversationMessages: messages,
       contextBlock,
     });
-    db.saveDashboard(sessionId, dashboard);
+    await db.saveDashboard(sessionId, dashboard);
     res.json({ dashboard, cached: false });
   } catch (err) {
     console.error('Dashboard error:', err);
@@ -298,23 +301,20 @@ app.post('/api/evening/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
 
-  const sessionRow = db.db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  const sessionRow = await db.getSessionById(sessionId);
   if (!sessionRow) return res.status(404).json({ error: 'Session not found' });
 
-  // Mark session as evening_review if it isn't already
   if (sessionRow.status === 'dashboard' || sessionRow.status === 'checkin') {
-    db.updateSessionStatus(sessionId, 'evening_review');
+    await db.updateSessionStatus(sessionId, 'evening_review');
   }
 
   if (message) {
-    db.addMessage(sessionId, 'user', message);
+    await db.addMessage(sessionId, 'user', message);
   }
 
   const { contextBlock } = await buildContext(sessionRow.date);
-  const allMessages = db.getSessionMessages(sessionId);
+  const allMessages = await db.getSessionMessages(sessionId);
 
-  // Split morning vs evening messages (morning = before status change to evening_review)
-  // Simple approach: use all messages
   const conversationMessages = allMessages.map((m) => ({
     role: m.role,
     content: m.content,
@@ -337,7 +337,7 @@ app.post('/api/evening/chat', async (req, res) => {
       res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
     }
 
-    db.addMessage(sessionId, 'assistant', fullResponse);
+    await db.addMessage(sessionId, 'assistant', fullResponse);
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
   } catch (err) {
     console.error('Evening chat error:', err);
@@ -347,16 +347,15 @@ app.post('/api/evening/chat', async (req, res) => {
   }
 });
 
-// Generate end-of-day summary and mark session complete
 app.post('/api/evening/complete', async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
 
-  const sessionRow = db.db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  const sessionRow = await db.getSessionById(sessionId);
   if (!sessionRow) return res.status(404).json({ error: 'Session not found' });
 
   const { contextBlock } = await buildContext(sessionRow.date);
-  const allMessages = db.getSessionMessages(sessionId).map((m) => ({
+  const allMessages = (await db.getSessionMessages(sessionId)).map((m) => ({
     role: m.role,
     content: m.content,
   }));
@@ -367,8 +366,8 @@ app.post('/api/evening/complete', async (req, res) => {
       contextBlock,
       dateStr: sessionRow.date,
     });
-    db.saveSessionSummary(sessionId, summary);
-    db.saveEveningReview(sessionId, summary);
+    await db.saveSessionSummary(sessionId, summary);
+    await db.saveEveningReview(sessionId, summary);
     res.json({ summary });
   } catch (err) {
     console.error('Evening complete error:', err);
@@ -378,24 +377,23 @@ app.post('/api/evening/complete', async (req, res) => {
 
 // ─── Routes: Mac Agent Snapshot ───────────────────────────────────────────────
 
-app.post('/api/snapshot', requireAgentAuth, (req, res) => {
+app.post('/api/snapshot', requireAgentAuth, async (req, res) => {
   const { notes, active_note, reminders } = req.body;
 
   if (!Array.isArray(notes) || !Array.isArray(reminders)) {
     return res.status(400).json({ error: 'notes and reminders must be arrays' });
   }
 
-  db.saveSnapshot(notes, active_note || null, reminders);
+  await db.saveSnapshot(notes, active_note || null, reminders);
   console.log(`Snapshot received: ${notes.length} notes, ${reminders.length} reminders`);
   res.json({ ok: true, received_at: new Date().toISOString() });
 });
 
-// Get latest snapshot info
-app.get('/api/snapshot/status', (req, res) => {
-  const snapshot = db.getLatestSnapshot();
+app.get('/api/snapshot/status', async (req, res) => {
+  const snapshot = await db.getLatestSnapshot();
   if (!snapshot) return res.json({ available: false });
 
-  const ageMs = Date.now() - new Date(snapshot.received_at.replace(' ', 'T') + 'Z').getTime();
+  const ageMs = Date.now() - new Date(snapshot.received_at).getTime();
   res.json({
     available: true,
     received_at: snapshot.received_at,
@@ -407,39 +405,162 @@ app.get('/api/snapshot/status', (req, res) => {
 
 // ─── Routes: Tracked Items ────────────────────────────────────────────────────
 
-app.get('/api/tracked-items', (req, res) => {
-  res.json({ items: db.getUnresolvedTrackedItems() });
+app.get('/api/tracked-items', async (req, res) => {
+  res.json({ items: await db.getUnresolvedTrackedItems() });
 });
 
-app.post('/api/tracked-items', (req, res) => {
+app.post('/api/tracked-items', async (req, res) => {
   const { description, sessionId } = req.body;
   if (!description) return res.status(400).json({ error: 'description required' });
   const dateStr = getNZDateStr();
-  const item = db.upsertTrackedItem(description, dateStr, sessionId);
+  const item = await db.upsertTrackedItem(description, dateStr, sessionId);
   res.json({ item });
 });
 
-app.patch('/api/tracked-items/:id/resolve', (req, res) => {
-  db.resolveTrackedItem(req.params.id);
+app.patch('/api/tracked-items/:id/resolve', async (req, res) => {
+  await db.resolveTrackedItem(req.params.id);
   res.json({ ok: true });
+});
+
+// ─── Routes: Life Wheel Scores ────────────────────────────────────────────────
+
+app.post('/api/scores', async (req, res) => {
+  const { sessionId, phase, scores } = req.body;
+  if (!phase || !scores || typeof scores !== 'object') {
+    return res.status(400).json({ error: 'phase and scores required' });
+  }
+
+  const dateStr = getNZDateStr();
+
+  try {
+    const entry = await db.saveLifeWheelScores(sessionId || null, dateStr, phase, scores);
+    res.json({ ok: true, entry });
+  } catch (err) {
+    console.error('Scores save error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/scores', async (req, res) => {
+  const daysBack = parseInt(req.query.days || '30', 10);
+  try {
+    const scores = await db.getLifeWheelScores(daysBack);
+    res.json({ scores, categories: db.LIFE_WHEEL_CATEGORIES });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Routes: Aims ─────────────────────────────────────────────────────────────
+
+app.get('/api/aims/current', async (req, res) => {
+  try {
+    const aim = await db.getCurrentAim();
+    res.json({ aim });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/aims', async (req, res) => {
+  try {
+    const aims = await db.getAimHistory(10);
+    res.json({ aims });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/aims', async (req, res) => {
+  const { heart_wish, aim_statement, start_date, end_date, accountability_person } = req.body;
+  if (!aim_statement) {
+    return res.status(400).json({ error: 'aim_statement required' });
+  }
+  const dateStr = getNZDateStr();
+
+  try {
+    const aim = await db.createAim(
+      heart_wish || null,
+      aim_statement,
+      start_date || dateStr,
+      end_date || null,
+      accountability_person || null
+    );
+    res.json({ ok: true, aim });
+  } catch (err) {
+    console.error('Aim create error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/aims/:id', async (req, res) => {
+  const { heart_wish, aim_statement, end_date, accountability_person, status } = req.body;
+  const fields = {};
+  if (heart_wish !== undefined) fields.heart_wish = heart_wish;
+  if (aim_statement !== undefined) fields.aim_statement = aim_statement;
+  if (end_date !== undefined) fields.end_date = end_date;
+  if (accountability_person !== undefined) fields.accountability_person = accountability_person;
+  if (status !== undefined) fields.status = status;
+
+  try {
+    await db.updateAim(req.params.id, fields);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/aims/:id/reflect', async (req, res) => {
+  const { reflection, practice_happened } = req.body;
+  const dateStr = getNZDateStr();
+
+  try {
+    const entry = await db.addAimReflection(
+      req.params.id,
+      dateStr,
+      reflection || null,
+      practice_happened === true || practice_happened === 'true'
+    );
+    res.json({ ok: true, entry });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/aims/:id/reflections', async (req, res) => {
+  try {
+    const reflections = await db.getAimReflections(req.params.id, 30);
+    res.json({ reflections });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Routes: Health ───────────────────────────────────────────────────────────
 
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  const tokens = await db.getGoogleTokens();
   res.json({
     ok: true,
     time: DateTime.now().setZone(NZ_TZ).toISO(),
     date_nz: getNZDateStr(),
-    accounts_connected: db.getGoogleTokens().length,
+    accounts_connected: tokens.length,
   });
 });
 
 // ─── Start ─────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Morning System running on port ${PORT}`);
-  console.log(`NZ date: ${getNZDateStr()}`);
-  console.log(`Google accounts connected: ${db.getGoogleTokens().length}`);
-});
+
+db.initializeSchema()
+  .then(() => {
+    console.log('Database schema ready');
+    app.listen(PORT, () => {
+      console.log(`Morning System running on port ${PORT}`);
+      console.log(`NZ date: ${getNZDateStr()}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to initialise database schema:', err);
+    process.exit(1);
+  });

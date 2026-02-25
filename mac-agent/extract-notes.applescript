@@ -1,10 +1,9 @@
 -- Extract notes from Apple Notes app
--- Returns JSON with all notes (title, modified, body snippet) and specifically the "Active" note
+-- Returns JSON with all notes (title, modified, body snippet) and the full "Active" note
 
 on run
 	set noteList to {}
 	set activeNoteContent to ""
-	set noteIndex to 0
 
 	tell application "Notes"
 		set allNotes to notes of default account
@@ -12,13 +11,24 @@ on run
 		repeat with aNote in allNotes
 			set noteTitle to name of aNote
 			set noteDate to modification date of aNote
-			set noteIndex to noteIndex + 1
 
-			-- Check if this is the Active note
+			-- Extract body for every note (strip HTML, truncate to 600 chars)
+			set noteBody to ""
+			try
+				set rawBody to body of aNote
+				set noteBody to do shell script "echo " & quoted form of rawBody & " | sed 's/<[^>]*>//g' | sed 's/&amp;/\\&/g' | sed 's/&lt;/</g' | sed 's/&gt;/>/g' | sed 's/&nbsp;/ /g' | tr '\\n' ' ' | sed 's/  */ /g'"
+				-- Truncate to 600 chars
+				if length of noteBody > 600 then
+					set noteBody to (characters 1 thru 600 of noteBody as string) & "…"
+				end if
+			on error
+				set noteBody to ""
+			end try
+
+			-- Full body for Active note
 			if noteTitle is "Active" then
 				try
 					set rawBody to body of aNote
-					-- Strip basic HTML tags
 					set activeNoteContent to do shell script "echo " & quoted form of rawBody & " | sed 's/<[^>]*>//g' | sed 's/&amp;/\\&/g' | sed 's/&lt;/</g' | sed 's/&gt;/>/g' | sed 's/&nbsp;/ /g'"
 				on error
 					set activeNoteContent to "(could not read Active note)"
@@ -45,19 +55,10 @@ on run
 			-- Escape title for JSON
 			set safeTitle to do shell script "echo " & quoted form of noteTitle & " | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g'"
 
-			-- Extract body snippet (first 15 notes only to keep agent fast)
+			-- Escape body for JSON
 			set safeBody to ""
-			if noteIndex ≤ 15 then
-				try
-					set rawBody to body of aNote
-					-- Truncate raw HTML before processing to limit shell time
-					if length of rawBody > 2000 then
-						set rawBody to text 1 thru 2000 of rawBody
-					end if
-					set safeBody to do shell script "printf '%s' " & quoted form of rawBody & " | sed 's/<[^>]*>//g' | sed 's/&amp;/\\&/g' | sed 's/&lt;/</g' | sed 's/&gt;/>/g' | sed 's/&nbsp;/ /g' | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g' | tr -d '\\r' | tr '\\n' ' '"
-				on error
-					set safeBody to ""
-				end try
+			if noteBody is not "" then
+				set safeBody to do shell script "echo " & quoted form of noteBody & " | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g' | tr '\\n' '|'"
 			end if
 
 			set noteList to noteList & {"{\"title\":\"" & safeTitle & "\",\"modified\":\"" & dateStr & "\",\"body\":\"" & safeBody & "\"}"}

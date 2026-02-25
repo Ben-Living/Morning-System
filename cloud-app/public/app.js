@@ -55,6 +55,7 @@ const state = {
   isStreaming: false,
   dashboardGenerated: false,
   eveningStarted: false,
+  currentScorePhase: 'morning',
 };
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -86,6 +87,25 @@ const els = {
   newTrackedItem: $('new-tracked-item'),
   addTrackedBtn: $('add-tracked-btn'),
   loading: $('loading'),
+  // Life wheel scoring
+  scoreMorningBtn: $('score-morning-btn'),
+  scoreEveningBtn: $('score-evening-btn'),
+  scoreModal: $('score-modal'),
+  scoreModalOverlay: $('score-modal-overlay'),
+  scoreModalClose: $('score-modal-close'),
+  scoreSliders: $('score-sliders'),
+  scoreSubmitBtn: $('score-submit-btn'),
+  // Aims
+  aimDisplay: $('aim-display'),
+  aimForm: $('aim-form'),
+  aimHeartWish: $('aim-heart-wish'),
+  aimStatement: $('aim-statement'),
+  aimStartDate: $('aim-start-date'),
+  aimEndDate: $('aim-end-date'),
+  aimAccountability: $('aim-accountability'),
+  aimSaveBtn: $('aim-save-btn'),
+  aimCancelBtn: $('aim-cancel-btn'),
+  aimNewBtn: $('aim-new-btn'),
 };
 
 // ── API helpers ────────────────────────────────────────────────────────────
@@ -475,6 +495,115 @@ function switchView(view) {
   if (view === 'evening' && !state.eveningStarted) {
     startEveningReview();
   }
+
+  // Render/refresh life wheel chart when switching to dashboard
+  if (view === 'dashboard') {
+    fetchAndRenderChart();
+  }
+}
+
+// ── Life Wheel Radar Chart ──────────────────────────────────────────────────
+
+let lifeWheelChart = null;
+
+const CHART_LABELS = [
+  'Health', 'Career', 'Finances', 'Relations',
+  'Growth', 'Fun/Rec', 'Environment', 'Spirit',
+  'Contribution', 'Intimacy',
+];
+
+const CHART_FULL_CATEGORIES = [
+  'Health and Well-being', 'Career or Work', 'Finances', 'Relationships',
+  'Personal Growth', 'Fun and Recreation', 'Physical Environment',
+  'Spirituality or Faith', 'Contribution and Service', 'Love and Intimacy',
+];
+
+const CHART_COLORS = [
+  { line: '#2d5a3d', fill: 'rgba(45,90,61,0.15)' },
+  { line: '#e67e22', fill: 'rgba(230,126,34,0.10)' },
+  { line: '#3498db', fill: 'rgba(52,152,219,0.10)' },
+];
+
+async function fetchAndRenderChart() {
+  const canvas = document.getElementById('life-wheel-canvas');
+  const container = document.getElementById('chart-container');
+  if (!canvas || !container) return;
+
+  try {
+    const { scores } = await get('/api/scores?days=14');
+    if (!scores || scores.length === 0) {
+      container.classList.add('hidden');
+      return;
+    }
+
+    // Group by date, prefer morning scores, take last 3 unique dates
+    const dateMap = new Map();
+    scores.forEach((entry) => {
+      if (!dateMap.has(entry.date)) dateMap.set(entry.date, {});
+      // morning overwrites if both exist
+      if (!dateMap.get(entry.date).morning || entry.phase === 'morning') {
+        dateMap.get(entry.date)[entry.phase] = entry;
+      }
+    });
+
+    const sortedDates = [...dateMap.keys()].sort().reverse().slice(0, 3);
+    if (sortedDates.length === 0) {
+      container.classList.add('hidden');
+      return;
+    }
+
+    container.classList.remove('hidden');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const datasets = sortedDates.map((date, idx) => {
+      const dayData = dateMap.get(date);
+      const entry = dayData.morning || dayData.evening || Object.values(dayData)[0];
+      const data = CHART_FULL_CATEGORIES.map((cat) => entry.scores[cat] ?? 0);
+      const label = date === today ? 'Today' : date === sortedDates[1] && idx === 1 ? 'Yesterday' : date;
+
+      return {
+        label,
+        data,
+        borderColor: CHART_COLORS[idx].line,
+        backgroundColor: CHART_COLORS[idx].fill,
+        pointBackgroundColor: CHART_COLORS[idx].line,
+        pointRadius: 3,
+        borderWidth: idx === 0 ? 2.5 : 1.5,
+      };
+    });
+
+    if (lifeWheelChart) {
+      lifeWheelChart.destroy();
+      lifeWheelChart = null;
+    }
+
+    lifeWheelChart = new Chart(canvas, {
+      type: 'radar',
+      data: { labels: CHART_LABELS, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        scales: {
+          r: {
+            min: 0,
+            max: 10,
+            ticks: { stepSize: 2, font: { size: 10 }, backdropColor: 'transparent' },
+            pointLabels: { font: { size: 11 } },
+            grid: { color: 'rgba(0,0,0,0.07)' },
+            angleLines: { color: 'rgba(0,0,0,0.07)' },
+          },
+        },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { font: { size: 12 }, padding: 12, boxWidth: 12 },
+          },
+        },
+      },
+    });
+  } catch (err) {
+    console.error('Chart render error:', err);
+  }
 }
 
 // ── Settings Panel ─────────────────────────────────────────────────────────
@@ -482,7 +611,7 @@ function switchView(view) {
 async function openSettings() {
   els.settingsPanel.classList.remove('hidden');
   els.settingsOverlay.classList.remove('hidden');
-  await Promise.all([loadAccounts(), loadAgentStatus(), loadTrackedItems()]);
+  await Promise.all([loadAccounts(), loadAgentStatus(), loadTrackedItems(), loadCurrentAim()]);
 }
 
 function closeSettings() {
@@ -592,6 +721,164 @@ function showLoading(show) {
   els.loading.classList.toggle('hidden', !show);
 }
 
+// ── Life Wheel Scoring ─────────────────────────────────────────────────────
+
+const LIFE_WHEEL_CATEGORIES = [
+  'Health and Well-being',
+  'Career or Work',
+  'Finances',
+  'Relationships',
+  'Personal Growth',
+  'Fun and Recreation',
+  'Physical Environment',
+  'Spirituality or Faith',
+  'Contribution and Service',
+  'Love and Intimacy',
+];
+
+function openScoreModal(phase) {
+  state.currentScorePhase = phase;
+  // Build sliders
+  els.scoreSliders.innerHTML = LIFE_WHEEL_CATEGORIES.map((cat) => `
+    <div class="score-row">
+      <label class="score-label">${escapeHtml(cat)}</label>
+      <div class="score-input-group">
+        <input type="range" min="1" max="10" value="5" class="score-range" data-category="${escapeHtml(cat)}" id="score-${cat.replace(/\s+/g, '-')}" />
+        <span class="score-value" id="val-${cat.replace(/\s+/g, '-')}">5</span>
+      </div>
+    </div>
+  `).join('');
+
+  // Wire range -> value display
+  document.querySelectorAll('.score-range').forEach((input) => {
+    const valId = 'val-' + input.dataset.category.replace(/\s+/g, '-');
+    input.addEventListener('input', () => {
+      document.getElementById(valId).textContent = input.value;
+    });
+  });
+
+  els.scoreModal.classList.remove('hidden');
+  els.scoreModalOverlay.classList.remove('hidden');
+}
+
+function closeScoreModal() {
+  els.scoreModal.classList.add('hidden');
+  els.scoreModalOverlay.classList.add('hidden');
+}
+
+async function submitScores() {
+  const scores = {};
+  document.querySelectorAll('.score-range').forEach((input) => {
+    scores[input.dataset.category] = parseInt(input.value, 10);
+  });
+
+  try {
+    await post('/api/scores', {
+      sessionId: state.sessionId,
+      phase: state.currentScorePhase,
+      scores,
+    });
+    closeScoreModal();
+    showStatus('Scores saved.', false);
+    // Refresh chart if dashboard is currently visible
+    if (state.currentView === 'dashboard') {
+      fetchAndRenderChart();
+    }
+  } catch (err) {
+    alert('Error saving scores: ' + err.message);
+  }
+}
+
+// ── Aims ───────────────────────────────────────────────────────────────────
+
+let currentAimId = null;
+
+async function loadCurrentAim() {
+  try {
+    const { aim } = await get('/api/aims/current');
+    currentAimId = aim ? aim.id : null;
+
+    if (aim) {
+      const ageMs = Date.now() - new Date(aim.start_date).getTime();
+      const days = Math.round(ageMs / 86400000);
+      els.aimDisplay.innerHTML = `
+        <div class="aim-card">
+          ${aim.heart_wish ? `<p class="aim-heart-wish"><em>"${escapeHtml(aim.heart_wish)}"</em></p>` : ''}
+          <p class="aim-statement"><strong>${escapeHtml(aim.aim_statement)}</strong></p>
+          <p class="muted" style="font-size:13px">
+            Started: ${aim.start_date}${aim.end_date ? ` · Ends: ${aim.end_date}` : ''} · Day ${days}
+            ${aim.accountability_person ? `<br>Accountable to: ${escapeHtml(aim.accountability_person)}` : ''}
+          </p>
+          <div class="connect-row" style="margin-top:8px">
+            <button class="btn-secondary" onclick="openReflectModal()">Reflect today</button>
+            <button class="btn-danger" onclick="completeAim()">Mark complete</button>
+          </div>
+        </div>
+      `;
+    } else {
+      els.aimDisplay.innerHTML = '<p class="muted" style="font-size:14px">No active aim. Use the morning or evening conversation to explore what your heart is wanting, then set it here.</p>';
+    }
+  } catch {
+    els.aimDisplay.innerHTML = '<p class="muted">Could not load aim.</p>';
+  }
+}
+
+function showAimForm() {
+  const today = new Date().toISOString().slice(0, 10);
+  els.aimStartDate.value = today;
+  els.aimForm.classList.remove('hidden');
+  $('aim-actions').classList.add('hidden');
+}
+
+function hideAimForm() {
+  els.aimForm.classList.add('hidden');
+  $('aim-actions').classList.remove('hidden');
+}
+
+async function saveAim() {
+  const aimStatement = els.aimStatement.value.trim();
+  if (!aimStatement) {
+    alert('Please enter an aim statement.');
+    return;
+  }
+
+  try {
+    await post('/api/aims', {
+      heart_wish: els.aimHeartWish.value.trim() || null,
+      aim_statement: aimStatement,
+      start_date: els.aimStartDate.value || new Date().toISOString().slice(0, 10),
+      end_date: els.aimEndDate.value || null,
+      accountability_person: els.aimAccountability.value.trim() || null,
+    });
+    hideAimForm();
+    // Clear form
+    els.aimHeartWish.value = '';
+    els.aimStatement.value = '';
+    els.aimEndDate.value = '';
+    els.aimAccountability.value = '';
+    await loadCurrentAim();
+  } catch (err) {
+    alert('Error saving aim: ' + err.message);
+  }
+}
+
+window.completeAim = async function () {
+  if (!currentAimId) return;
+  if (!confirm('Mark this aim as complete?')) return;
+  await patch(`/api/aims/${currentAimId}`, { status: 'completed' });
+  await loadCurrentAim();
+};
+
+window.openReflectModal = function () {
+  if (!currentAimId) return;
+  const practiceHappened = confirm('Did you engage with your aim practice today?\n\nOK = Yes, Cancel = No');
+  const reflection = prompt('One-line reflection (optional):') || '';
+  post(`/api/aims/${currentAimId}/reflect`, {
+    reflection,
+    practice_happened: practiceHappened,
+  }).then(() => showStatus('Reflection saved.', false)).catch(() => {});
+};
+
 // ── Event Listeners ────────────────────────────────────────────────────────
 
 // Tab switching
@@ -619,6 +906,13 @@ document.querySelectorAll('.quick-btn[data-msg]').forEach((btn) => {
 
 els.genDashBtn.addEventListener('click', generateDashboard);
 els.genDashBtn2.addEventListener('click', generateDashboard);
+
+// Scoring
+els.scoreMorningBtn.addEventListener('click', () => openScoreModal('morning'));
+els.scoreEveningBtn.addEventListener('click', () => openScoreModal('evening'));
+els.scoreModalClose.addEventListener('click', closeScoreModal);
+els.scoreModalOverlay.addEventListener('click', closeScoreModal);
+els.scoreSubmitBtn.addEventListener('click', submitScores);
 
 // Evening
 els.eveningSendBtn.addEventListener('click', sendEveningMessage);
@@ -652,6 +946,11 @@ els.addTrackedBtn.addEventListener('click', async () => {
 els.newTrackedItem.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') els.addTrackedBtn.click();
 });
+
+// Aims
+els.aimNewBtn.addEventListener('click', showAimForm);
+els.aimCancelBtn.addEventListener('click', hideAimForm);
+els.aimSaveBtn.addEventListener('click', saveAim);
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
