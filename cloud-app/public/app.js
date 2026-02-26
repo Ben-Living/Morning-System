@@ -4,34 +4,24 @@
 function renderMarkdown(text) {
   if (!text) return '';
   let html = text
-    // Escape HTML
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    // Headers
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Bold & italic
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/_(.+?)_/g, '<em>$1</em>')
-    // Code
     .replace(/`(.+?)`/g, '<code>$1</code>')
-    // HR
     .replace(/^---$/gm, '<hr>')
-    // Blockquote
     .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
-    // Unordered list items (collect into lists below)
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     .replace(/^• (.+)$/gm, '<li>$1</li>')
-    // Ordered list items
     .replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
 
-  // Wrap consecutive <li> tags in <ul>
   html = html.replace(/(<li>.*?<\/li>\n?)+/gs, (match) => `<ul>${match}</ul>`);
 
-  // Paragraphs: wrap lines not already wrapped in block tags
   const blockTags = /^(<h[1-6]|<ul|<ol|<li|<hr|<blockquote|<\/ul|<\/ol)/;
   html = html
     .split('\n')
@@ -56,6 +46,9 @@ const state = {
   dashboardGenerated: false,
   eveningStarted: false,
   currentScorePhase: 'morning',
+  // Midday & Reflect use ephemeral in-memory history
+  middayHistory: [],
+  reflectHistory: [],
 };
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -64,17 +57,36 @@ const $ = (id) => document.getElementById(id);
 
 const els = {
   headerDate: $('header-date'),
+  // Check-in
   messages: $('messages'),
   chatInput: $('chat-input'),
   sendBtn: $('send-btn'),
   genDashBtn: $('gen-dashboard-btn'),
   genDashBtn2: $('gen-dashboard-btn-2'),
+  checkinStatus: $('checkin-status'),
+  scoreMorningBtn: $('score-morning-btn'),
+  // Dashboard
   dashContent: $('dashboard-content'),
+  // Midday
+  middayMessages: $('midday-messages'),
+  middayInput: $('midday-input'),
+  middaySendBtn: $('midday-send-btn'),
+  // Evening
   eveningMessages: $('evening-messages'),
   eveningInput: $('evening-input'),
   eveningSendBtn: $('evening-send-btn'),
   completeDayBtn: $('complete-day-btn'),
-  checkinStatus: $('checkin-status'),
+  // Reflect
+  reflectMessages: $('reflect-messages'),
+  reflectInput: $('reflect-input'),
+  reflectSendBtn: $('reflect-send-btn'),
+  orientationDisplay: $('orientation-display'),
+  orientationEditor: $('orientation-editor'),
+  orientationTextarea: $('orientation-textarea'),
+  orientationEditBtn: $('orientation-edit-btn'),
+  orientationSaveBtn: $('orientation-save-btn'),
+  orientationCancelBtn: $('orientation-cancel-btn'),
+  // Settings
   menuBtn: $('menu-btn'),
   settingsPanel: $('settings-panel'),
   settingsOverlay: $('settings-overlay'),
@@ -87,9 +99,7 @@ const els = {
   newTrackedItem: $('new-tracked-item'),
   addTrackedBtn: $('add-tracked-btn'),
   loading: $('loading'),
-  // Life wheel scoring
-  scoreMorningBtn: $('score-morning-btn'),
-  scoreEveningBtn: $('score-evening-btn'),
+  // Scoring
   scoreModal: $('score-modal'),
   scoreModalOverlay: $('score-modal-overlay'),
   scoreModalClose: $('score-modal-close'),
@@ -123,6 +133,7 @@ async function api(method, path, body) {
 
 function get(path) { return api('GET', path); }
 function post(path, body) { return api('POST', path, body); }
+function put(path, body) { return api('PUT', path, body); }
 function del(path) { return api('DELETE', path); }
 function patch(path, body) { return api('PATCH', path, body); }
 
@@ -136,7 +147,6 @@ async function loadSession() {
     state.sessionDate = session.date;
     state.sessionStatus = session.status;
 
-    // Render date
     const d = new Date(session.date);
     els.headerDate.textContent = d.toLocaleDateString('en-NZ', {
       weekday: 'short',
@@ -144,24 +154,20 @@ async function loadSession() {
       month: 'short',
     });
 
-    // Restore messages
     if (messages.length > 0) {
       messages.forEach((m) => appendMessage(m.role, m.content, false));
       scrollToBottom(els.messages);
     }
 
-    // If session has dashboard, show indicator
     if (session.dashboard) {
       state.dashboardGenerated = true;
       renderDashboard(session.dashboard);
     }
 
-    // If no messages yet, open the check-in
     if (messages.length === 0) {
       await openCheckin();
     }
 
-    // Handle URL params (OAuth success/fail)
     const params = new URLSearchParams(window.location.search);
     if (params.has('connected')) {
       showStatus(`Connected ${decodeURIComponent(params.get('connected'))}`, false);
@@ -172,7 +178,6 @@ async function loadSession() {
       window.history.replaceState({}, '', '/');
     }
 
-    // Snapshot status warning
     await checkSnapshotStatus();
   } catch (err) {
     console.error('Session load error:', err);
@@ -183,7 +188,7 @@ async function loadSession() {
 }
 
 async function openCheckin() {
-  appendTypingIndicator('checkin-typing');
+  appendTypingIndicator('checkin-typing', els.messages);
   try {
     await streamResponse('/api/session/open', { sessionId: state.sessionId }, 'checkin-typing', els.messages);
   } catch (err) {
@@ -209,7 +214,7 @@ async function checkSnapshotStatus() {
 
 function appendMessage(role, content, animate = true) {
   const div = document.createElement('div');
-  div.className = `message ${role}${animate ? '' : ''}`;
+  div.className = `message ${role}`;
 
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble';
@@ -222,24 +227,19 @@ function appendMessage(role, content, animate = true) {
 
   div.appendChild(bubble);
 
-  if (role === 'user') {
-    const container = document.activeElement === els.eveningInput
-      ? els.eveningMessages
-      : els.messages;
-    container.appendChild(div);
-    scrollToBottom(container);
-  } else {
-    // Determine which container
-    const inEvening = state.currentView === 'evening';
-    const container = inEvening ? els.eveningMessages : els.messages;
-    container.appendChild(div);
-    scrollToBottom(container);
-  }
+  // Route to appropriate container
+  let container;
+  if (state.currentView === 'evening') container = els.eveningMessages;
+  else if (state.currentView === 'midday') container = els.middayMessages;
+  else if (state.currentView === 'reflect') container = els.reflectMessages;
+  else container = els.messages;
 
+  container.appendChild(div);
+  scrollToBottom(container);
   return div;
 }
 
-function appendMessageToContainer(role, content, container, animate = true) {
+function appendMessageToContainer(role, content, container) {
   const div = document.createElement('div');
   div.className = `message ${role}`;
 
@@ -258,8 +258,7 @@ function appendMessageToContainer(role, content, container, animate = true) {
   return div;
 }
 
-function appendTypingIndicator(id) {
-  const container = state.currentView === 'evening' ? els.eveningMessages : els.messages;
+function appendTypingIndicator(id, container) {
   const existing = document.getElementById(id);
   if (existing) return;
 
@@ -291,7 +290,6 @@ function scrollToBottom(container) {
 
 async function streamResponse(url, body, typingId, container) {
   return new Promise((resolve, reject) => {
-    // Use fetch with streaming
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -346,7 +344,7 @@ async function streamResponse(url, body, typingId, container) {
   });
 }
 
-// ── Send chat message ──────────────────────────────────────────────────────
+// ── Morning Check-In ──────────────────────────────────────────────────────
 
 async function sendCheckinMessage() {
   const text = els.chatInput.value.trim();
@@ -358,7 +356,7 @@ async function sendCheckinMessage() {
   autoResizeTextarea(els.chatInput);
 
   appendMessageToContainer('user', text, els.messages);
-  appendTypingIndicator('checkin-typing');
+  appendTypingIndicator('checkin-typing', els.messages);
 
   try {
     await streamResponse(
@@ -378,7 +376,74 @@ async function sendCheckinMessage() {
   }
 }
 
-// ── Generate Dashboard ─────────────────────────────────────────────────────
+// ── Midday Chat ────────────────────────────────────────────────────────────
+
+async function sendMiddayMessage() {
+  const text = els.middayInput.value.trim();
+  if (!text || state.isStreaming) return;
+
+  state.isStreaming = true;
+  els.middaySendBtn.disabled = true;
+  els.middayInput.value = '';
+  autoResizeTextarea(els.middayInput);
+
+  appendMessageToContainer('user', text, els.middayMessages);
+  appendTypingIndicator('midday-typing', els.middayMessages);
+
+  try {
+    const fullResponse = await streamResponse(
+      '/api/midday/chat',
+      { message: text, history: state.middayHistory },
+      'midday-typing',
+      els.middayMessages
+    );
+    // Update ephemeral history
+    state.middayHistory.push({ role: 'user', content: text });
+    state.middayHistory.push({ role: 'assistant', content: fullResponse });
+  } catch (err) {
+    removeTypingIndicator('midday-typing');
+    appendMessageToContainer('assistant', 'Something went wrong. Please try again.', els.middayMessages);
+  } finally {
+    state.isStreaming = false;
+    els.middaySendBtn.disabled = false;
+    els.middayInput.focus();
+  }
+}
+
+// ── Reflect Chat ───────────────────────────────────────────────────────────
+
+async function sendReflectMessage() {
+  const text = els.reflectInput.value.trim();
+  if (!text || state.isStreaming) return;
+
+  state.isStreaming = true;
+  els.reflectSendBtn.disabled = true;
+  els.reflectInput.value = '';
+  autoResizeTextarea(els.reflectInput);
+
+  appendMessageToContainer('user', text, els.reflectMessages);
+  appendTypingIndicator('reflect-typing', els.reflectMessages);
+
+  try {
+    const fullResponse = await streamResponse(
+      '/api/reflect/chat',
+      { message: text, history: state.reflectHistory },
+      'reflect-typing',
+      els.reflectMessages
+    );
+    state.reflectHistory.push({ role: 'user', content: text });
+    state.reflectHistory.push({ role: 'assistant', content: fullResponse });
+  } catch (err) {
+    removeTypingIndicator('reflect-typing');
+    appendMessageToContainer('assistant', 'Something went wrong. Please try again.', els.reflectMessages);
+  } finally {
+    state.isStreaming = false;
+    els.reflectSendBtn.disabled = false;
+    els.reflectInput.focus();
+  }
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
 
 async function generateDashboard() {
   if (state.dashboardGenerated) {
@@ -386,7 +451,7 @@ async function generateDashboard() {
     return;
   }
 
-  els.dashContent.innerHTML = '<div class="dashboard-loading"><div class="spinner"></div><p class="muted">Generating your dashboard…</p></div>';
+  els.dashContent.innerHTML = '<div class="dashboard-loading"><div class="spinner"></div><p>Generating your dashboard…</p></div>';
   switchView('dashboard');
 
   try {
@@ -401,8 +466,43 @@ async function generateDashboard() {
 }
 
 function renderDashboard(markdown) {
-  els.dashContent.innerHTML = renderMarkdown(markdown);
+  const fullHtml = renderMarkdown(markdown);
+
+  // Split at the 5th <h2> — everything from there is collapsed
+  let h2Count = 0;
+  let searchIdx = 0;
+  while (h2Count < 4) {
+    const idx = fullHtml.indexOf('<h2>', searchIdx);
+    if (idx === -1) break;
+    h2Count++;
+    searchIdx = idx + 4;
+  }
+
+  const splitIdx = fullHtml.indexOf('<h2>', searchIdx);
+
+  if (splitIdx === -1) {
+    // Fewer than 5 sections — show everything
+    els.dashContent.innerHTML = fullHtml;
+    return;
+  }
+
+  const visible = fullHtml.slice(0, splitIdx);
+  const collapsed = fullHtml.slice(splitIdx);
+
+  els.dashContent.innerHTML =
+    visible +
+    `<div class="dash-toggle-row"><button class="dash-toggle-btn" id="dash-toggle-btn" onclick="toggleDashMore()">Show more</button></div>` +
+    `<div id="dash-more" class="hidden">${collapsed}</div>`;
 }
+
+window.toggleDashMore = function () {
+  const more = document.getElementById('dash-more');
+  const btn = document.getElementById('dash-toggle-btn');
+  if (!more || !btn) return;
+  const isHidden = more.classList.contains('hidden');
+  more.classList.toggle('hidden', !isHidden);
+  btn.textContent = isHidden ? 'Show less' : 'Show more';
+};
 
 // ── Evening Review ─────────────────────────────────────────────────────────
 
@@ -410,7 +510,7 @@ async function startEveningReview() {
   if (state.eveningStarted) return;
   state.eveningStarted = true;
 
-  appendTypingIndicator('evening-typing');
+  appendTypingIndicator('evening-typing', els.eveningMessages);
 
   try {
     await streamResponse(
@@ -435,7 +535,7 @@ async function sendEveningMessage() {
   autoResizeTextarea(els.eveningInput);
 
   appendMessageToContainer('user', text, els.eveningMessages);
-  appendTypingIndicator('evening-typing');
+  appendTypingIndicator('evening-typing', els.eveningMessages);
 
   try {
     await streamResponse(
@@ -454,13 +554,13 @@ async function sendEveningMessage() {
 }
 
 async function completeDay() {
-  if (!confirm('Mark today as complete and generate the day summary? This will inform tomorrow\'s check-in.')) return;
+  if (!confirm('Mark today as complete and save the day summary?')) return;
 
   showLoading(true);
   try {
     const { summary } = await post('/api/evening/complete', { sessionId: state.sessionId });
     appendMessageToContainer('assistant',
-      `**Day complete.** Here's the summary saved for tomorrow:\n\n${summary}`,
+      `Day complete. Summary saved for tomorrow:\n\n${summary}`,
       els.eveningMessages
     );
     els.completeDayBtn.disabled = true;
@@ -470,6 +570,42 @@ async function completeDay() {
     alert('Error completing day: ' + err.message);
   } finally {
     showLoading(false);
+  }
+}
+
+// ── Orientation ────────────────────────────────────────────────────────────
+
+async function loadOrientation() {
+  try {
+    const { content } = await get('/api/orientation');
+    els.orientationDisplay.textContent = content || '(no orientation document set)';
+    els.orientationTextarea.value = content || '';
+  } catch {
+    els.orientationDisplay.textContent = 'Could not load.';
+  }
+}
+
+function showOrientationEditor() {
+  els.orientationEditor.classList.remove('hidden');
+  els.orientationDisplay.classList.add('hidden');
+  els.orientationEditBtn.textContent = 'Cancel';
+  els.orientationTextarea.focus();
+}
+
+function hideOrientationEditor() {
+  els.orientationEditor.classList.add('hidden');
+  els.orientationDisplay.classList.remove('hidden');
+  els.orientationEditBtn.textContent = 'Edit';
+}
+
+async function saveOrientation() {
+  const content = els.orientationTextarea.value.trim();
+  try {
+    await put('/api/orientation', { content });
+    els.orientationDisplay.textContent = content || '(empty)';
+    hideOrientationEditor();
+  } catch (err) {
+    alert('Error saving orientation: ' + err.message);
   }
 }
 
@@ -488,17 +624,21 @@ function switchView(view) {
   });
 
   const target = document.getElementById(`view-${view}`);
-  target.classList.remove('hidden');
-  target.classList.add('active');
+  if (target) {
+    target.classList.remove('hidden');
+    target.classList.add('active');
+  }
 
-  // Lazy-start evening review
   if (view === 'evening' && !state.eveningStarted) {
     startEveningReview();
   }
 
-  // Render/refresh life wheel chart when switching to dashboard
   if (view === 'dashboard') {
     fetchAndRenderChart();
+  }
+
+  if (view === 'reflect') {
+    loadOrientation();
   }
 }
 
@@ -519,9 +659,9 @@ const CHART_FULL_CATEGORIES = [
 ];
 
 const CHART_COLORS = [
-  { line: '#2d5a3d', fill: 'rgba(45,90,61,0.15)' },
-  { line: '#e67e22', fill: 'rgba(230,126,34,0.10)' },
-  { line: '#3498db', fill: 'rgba(52,152,219,0.10)' },
+  { line: '#8B7355', fill: 'rgba(139,115,85,0.15)' },
+  { line: '#A89070', fill: 'rgba(168,144,112,0.10)' },
+  { line: '#C4AE8A', fill: 'rgba(196,174,138,0.08)' },
 ];
 
 async function fetchAndRenderChart() {
@@ -536,11 +676,9 @@ async function fetchAndRenderChart() {
       return;
     }
 
-    // Group by date, prefer morning scores, take last 3 unique dates
     const dateMap = new Map();
     scores.forEach((entry) => {
       if (!dateMap.has(entry.date)) dateMap.set(entry.date, {});
-      // morning overwrites if both exist
       if (!dateMap.get(entry.date).morning || entry.phase === 'morning') {
         dateMap.get(entry.date)[entry.phase] = entry;
       }
@@ -568,7 +706,7 @@ async function fetchAndRenderChart() {
         backgroundColor: CHART_COLORS[idx].fill,
         pointBackgroundColor: CHART_COLORS[idx].line,
         pointRadius: 3,
-        borderWidth: idx === 0 ? 2.5 : 1.5,
+        borderWidth: idx === 0 ? 2 : 1.5,
       };
     });
 
@@ -587,16 +725,29 @@ async function fetchAndRenderChart() {
           r: {
             min: 0,
             max: 10,
-            ticks: { stepSize: 2, font: { size: 10 }, backdropColor: 'transparent' },
-            pointLabels: { font: { size: 11 } },
-            grid: { color: 'rgba(0,0,0,0.07)' },
-            angleLines: { color: 'rgba(0,0,0,0.07)' },
+            ticks: {
+              stepSize: 2,
+              font: { size: 10, family: "'IBM Plex Mono', monospace" },
+              backdropColor: 'transparent',
+              color: '#AEA89E',
+            },
+            pointLabels: {
+              font: { size: 11, family: "'IBM Plex Mono', monospace" },
+              color: '#7A7167',
+            },
+            grid: { color: 'rgba(0,0,0,0.06)' },
+            angleLines: { color: 'rgba(0,0,0,0.06)' },
           },
         },
         plugins: {
           legend: {
             position: 'bottom',
-            labels: { font: { size: 12 }, padding: 12, boxWidth: 12 },
+            labels: {
+              font: { size: 11, family: "'IBM Plex Mono', monospace" },
+              padding: 12,
+              boxWidth: 10,
+              color: '#7A7167',
+            },
           },
         },
       },
@@ -635,7 +786,7 @@ async function loadAccounts() {
         <button class="btn-danger" onclick="disconnectAccount('${a.email}')">Remove</button>
       </div>
     `).join('');
-  } catch (err) {
+  } catch {
     els.accountsList.innerHTML = '<p class="muted">Could not load accounts.</p>';
   }
 }
@@ -712,7 +863,7 @@ function showStatus(msg, isWarning = false) {
 
 function autoResizeTextarea(el) {
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  el.style.height = Math.min(el.scrollHeight, 180) + 'px';
 }
 
 // ── Loading ────────────────────────────────────────────────────────────────
@@ -738,7 +889,6 @@ const LIFE_WHEEL_CATEGORIES = [
 
 function openScoreModal(phase) {
   state.currentScorePhase = phase;
-  // Build sliders
   els.scoreSliders.innerHTML = LIFE_WHEEL_CATEGORIES.map((cat) => `
     <div class="score-row">
       <label class="score-label">${escapeHtml(cat)}</label>
@@ -749,7 +899,6 @@ function openScoreModal(phase) {
     </div>
   `).join('');
 
-  // Wire range -> value display
   document.querySelectorAll('.score-range').forEach((input) => {
     const valId = 'val-' + input.dataset.category.replace(/\s+/g, '-');
     input.addEventListener('input', () => {
@@ -780,7 +929,6 @@ async function submitScores() {
     });
     closeScoreModal();
     showStatus('Scores saved.', false);
-    // Refresh chart if dashboard is currently visible
     if (state.currentView === 'dashboard') {
       fetchAndRenderChart();
     }
@@ -803,8 +951,8 @@ async function loadCurrentAim() {
       const days = Math.round(ageMs / 86400000);
       els.aimDisplay.innerHTML = `
         <div class="aim-card">
-          ${aim.heart_wish ? `<p class="aim-heart-wish"><em>"${escapeHtml(aim.heart_wish)}"</em></p>` : ''}
-          <p class="aim-statement"><strong>${escapeHtml(aim.aim_statement)}</strong></p>
+          ${aim.heart_wish ? `<p class="aim-heart-wish">"${escapeHtml(aim.heart_wish)}"</p>` : ''}
+          <p class="aim-statement">${escapeHtml(aim.aim_statement)}</p>
           <p class="muted" style="font-size:13px">
             Started: ${aim.start_date}${aim.end_date ? ` · Ends: ${aim.end_date}` : ''} · Day ${days}
             ${aim.accountability_person ? `<br>Accountable to: ${escapeHtml(aim.accountability_person)}` : ''}
@@ -851,7 +999,6 @@ async function saveAim() {
       accountability_person: els.aimAccountability.value.trim() || null,
     });
     hideAimForm();
-    // Clear form
     els.aimHeartWish.value = '';
     els.aimStatement.value = '';
     els.aimEndDate.value = '';
@@ -886,7 +1033,7 @@ document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => switchView(tab.dataset.view));
 });
 
-// Check-in send
+// Check-in
 els.sendBtn.addEventListener('click', sendCheckinMessage);
 els.chatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -909,10 +1056,19 @@ els.genDashBtn2.addEventListener('click', generateDashboard);
 
 // Scoring
 els.scoreMorningBtn.addEventListener('click', () => openScoreModal('morning'));
-els.scoreEveningBtn.addEventListener('click', () => openScoreModal('evening'));
 els.scoreModalClose.addEventListener('click', closeScoreModal);
 els.scoreModalOverlay.addEventListener('click', closeScoreModal);
 els.scoreSubmitBtn.addEventListener('click', submitScores);
+
+// Midday
+els.middaySendBtn.addEventListener('click', sendMiddayMessage);
+els.middayInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMiddayMessage();
+  }
+});
+els.middayInput.addEventListener('input', () => autoResizeTextarea(els.middayInput));
 
 // Evening
 els.eveningSendBtn.addEventListener('click', sendEveningMessage);
@@ -924,6 +1080,30 @@ els.eveningInput.addEventListener('keydown', (e) => {
 });
 els.eveningInput.addEventListener('input', () => autoResizeTextarea(els.eveningInput));
 els.completeDayBtn.addEventListener('click', completeDay);
+
+// Reflect
+els.reflectSendBtn.addEventListener('click', sendReflectMessage);
+els.reflectInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendReflectMessage();
+  }
+});
+els.reflectInput.addEventListener('input', () => autoResizeTextarea(els.reflectInput));
+
+// Orientation
+els.orientationEditBtn.addEventListener('click', () => {
+  if (els.orientationEditor.classList.contains('hidden')) {
+    showOrientationEditor();
+  } else {
+    hideOrientationEditor();
+  }
+});
+els.orientationSaveBtn.addEventListener('click', saveOrientation);
+els.orientationCancelBtn.addEventListener('click', hideOrientationEditor);
+els.orientationDisplay.addEventListener('click', () => {
+  els.orientationDisplay.classList.toggle('expanded');
+});
 
 // Settings
 els.menuBtn.addEventListener('click', openSettings);

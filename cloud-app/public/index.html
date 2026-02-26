@@ -6,6 +6,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>Morning System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -13,19 +16,17 @@
     <!-- Header -->
     <header id="header">
       <div class="header-inner">
-        <div class="header-left">
-          <span id="header-date" class="header-date"></span>
-        </div>
+        <span id="header-date" class="header-date"></span>
         <div class="header-title">Morning System</div>
-        <div class="header-right">
-          <button id="menu-btn" class="icon-btn" title="Settings">⋯</button>
-        </div>
+        <button id="menu-btn" class="icon-btn" title="Settings">⋯</button>
       </div>
       <!-- View tabs -->
       <div class="tab-bar">
         <button class="tab active" data-view="checkin">Check-In</button>
         <button class="tab" data-view="dashboard">Dashboard</button>
+        <button class="tab" data-view="midday">Midday</button>
         <button class="tab" data-view="evening">Evening</button>
+        <button class="tab" data-view="reflect">Reflect</button>
       </div>
     </header>
 
@@ -40,24 +41,20 @@
           <div class="input-row">
             <textarea
               id="chat-input"
-              placeholder="Type a message…"
+              placeholder="Write here…"
               rows="1"
               autocomplete="off"
               autocorrect="on"
               spellcheck="true"
             ></textarea>
-            <button id="send-btn" class="send-btn" title="Send">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-            </button>
+            <button id="send-btn" class="send-btn" title="Send">↑</button>
           </div>
           <div class="quick-actions">
             <button class="quick-btn" data-msg="Just tell me what's on top today.">Quick mode</button>
             <button class="quick-btn" id="score-morning-btn">Score day →</button>
             <button class="quick-btn" id="gen-dashboard-btn">Generate dashboard →</button>
           </div>
+          <p class="dictate-hint">Tap the microphone on your keyboard to dictate</p>
         </div>
       </div>
 
@@ -70,9 +67,28 @@
         <div id="dashboard-content" class="prose-content">
           <div class="empty-state">
             <p>No dashboard yet.</p>
-            <p class="muted">Complete your morning check-in, then click "Generate dashboard →" to create it.</p>
+            <p class="muted">Complete your morning check-in, then generate it.</p>
             <button id="gen-dashboard-btn-2" class="btn-primary">Generate dashboard</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Midday View ── -->
+      <div id="view-midday" class="view hidden">
+        <div id="midday-messages" class="messages-container"></div>
+        <div class="input-area">
+          <div class="input-row">
+            <textarea
+              id="midday-input"
+              placeholder="How's the day tracking?"
+              rows="1"
+              autocomplete="off"
+              autocorrect="on"
+              spellcheck="true"
+            ></textarea>
+            <button id="midday-send-btn" class="send-btn" title="Send">↑</button>
+          </div>
+          <p class="dictate-hint">Tap the microphone on your keyboard to dictate</p>
         </div>
       </div>
 
@@ -89,17 +105,47 @@
               autocorrect="on"
               spellcheck="true"
             ></textarea>
-            <button id="evening-send-btn" class="send-btn" title="Send">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-            </button>
+            <button id="evening-send-btn" class="send-btn" title="Send">↑</button>
           </div>
           <div class="quick-actions">
-            <button class="quick-btn" id="score-evening-btn">Score day →</button>
             <button class="quick-btn" id="complete-day-btn">Complete day & save summary</button>
           </div>
+          <p class="dictate-hint">Tap the microphone on your keyboard to dictate</p>
+        </div>
+      </div>
+
+      <!-- ── Reflect View ── -->
+      <div id="view-reflect" class="view hidden">
+        <!-- Living Orientation -->
+        <div id="orientation-section" class="orientation-section">
+          <div class="orientation-header">
+            <span class="orientation-label">Living Orientation</span>
+            <button id="orientation-edit-btn" class="orientation-edit-btn">Edit</button>
+          </div>
+          <div id="orientation-display" class="orientation-display muted">Loading…</div>
+          <div id="orientation-editor" class="orientation-editor hidden">
+            <textarea id="orientation-textarea" rows="6" placeholder="Your orienting commitments…"></textarea>
+            <div class="orientation-actions">
+              <button id="orientation-save-btn" class="btn-primary-sm">Save</button>
+              <button id="orientation-cancel-btn" class="btn-secondary-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="reflect-messages" class="messages-container"></div>
+        <div class="input-area">
+          <div class="input-row">
+            <textarea
+              id="reflect-input"
+              placeholder="What's on your mind?"
+              rows="1"
+              autocomplete="off"
+              autocorrect="on"
+              spellcheck="true"
+            ></textarea>
+            <button id="reflect-send-btn" class="send-btn" title="Send">↑</button>
+          </div>
+          <p class="dictate-hint">Tap the microphone on your keyboard to dictate</p>
         </div>
       </div>
 

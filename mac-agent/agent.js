@@ -5,6 +5,8 @@
  * Runs every 30 minutes (via launchd).
  * Extracts Apple Notes and Reminders via AppleScript,
  * then POSTs a JSON snapshot to the cloud app.
+ * After each run, checks if today's session is complete and
+ * appends the day's export to ~/Morning-System/journal.md.
  *
  * Setup: see README.md or run ./setup.sh
  */
@@ -14,6 +16,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const execFileAsync = promisify(execFile);
 
@@ -21,6 +24,7 @@ const CLOUD_URL = process.env.CLOUD_URL;
 const AGENT_SECRET = process.env.AGENT_SECRET;
 const DRY_RUN = process.argv.includes('--dry-run');
 const LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'agent.log');
+const JOURNAL_FILE = process.env.JOURNAL_FILE || path.join(os.homedir(), 'Morning-System', 'journal.md');
 
 // ── Logging ────────────────────────────────────────────────────────────────
 
@@ -90,7 +94,6 @@ async function extractReminders() {
 // ── Post Snapshot ──────────────────────────────────────────────────────────
 
 async function postSnapshot(payload) {
-  // Dynamic import for node-fetch
   const { default: fetch } = await import('node-fetch');
 
   const res = await fetch(`${CLOUD_URL}/api/snapshot`, {
@@ -109,6 +112,67 @@ async function postSnapshot(payload) {
   }
 
   return res.json();
+}
+
+// ── Journal Export ─────────────────────────────────────────────────────────
+
+function journalContainsDate(dateStr) {
+  try {
+    if (!fs.existsSync(JOURNAL_FILE)) return false;
+    const content = fs.readFileSync(JOURNAL_FILE, 'utf8');
+    return content.includes(`=== ${dateStr} ===`);
+  } catch {
+    return false;
+  }
+}
+
+async function tryExportToJournal() {
+  const { default: fetch } = await import('node-fetch');
+
+  // Get today's date string from the server
+  let dateStr;
+  try {
+    const healthRes = await fetch(`${CLOUD_URL}/health`, { timeout: 10000 });
+    const health = await healthRes.json();
+    dateStr = health.date_nz;
+  } catch (err) {
+    logError('Could not fetch server date for journal export', err);
+    return;
+  }
+
+  if (journalContainsDate(dateStr)) {
+    log(`Journal already contains ${dateStr} — skipping export`);
+    return;
+  }
+
+  try {
+    const res = await fetch(`${CLOUD_URL}/api/export/today`, { timeout: 10000 });
+    if (res.status === 404) {
+      log('Today\'s session not complete yet — journal export skipped');
+      return;
+    }
+    if (!res.ok) {
+      logError(`Export endpoint returned ${res.status}`);
+      return;
+    }
+
+    const exportText = await res.text();
+    if (!exportText.trim()) {
+      log('Export returned empty — skipping');
+      return;
+    }
+
+    // Ensure journal directory exists
+    const journalDir = path.dirname(JOURNAL_FILE);
+    if (!fs.existsSync(journalDir)) {
+      fs.mkdirSync(journalDir, { recursive: true });
+    }
+
+    fs.appendFileSync(JOURNAL_FILE, '\n' + exportText);
+    log(`Journal export appended for ${dateStr} → ${JOURNAL_FILE}`);
+  } catch (err) {
+    logError('Journal export failed', err);
+  }
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
@@ -154,6 +218,9 @@ async function main() {
     logError('Failed to post snapshot', err);
     process.exit(1);
   }
+
+  // Attempt to append today's completed session to journal
+  await tryExportToJournal();
 }
 
 main().catch((err) => {
