@@ -13,23 +13,19 @@ on run
 			set noteDate to modification date of aNote
 
 			-- Extract body for every note (strip HTML, truncate to 600 chars)
-			set noteBody to ""
+			set safeBody to ""
 			try
 				set rawBody to body of aNote
-				set noteBody to do shell script "echo " & quoted form of rawBody & " | sed 's/<[^>]*>//g' | sed 's/&amp;/\\&/g' | sed 's/&lt;/</g' | sed 's/&gt;/>/g' | sed 's/&nbsp;/ /g' | tr '\\n' ' ' | sed 's/  */ /g'"
-				-- Truncate to 600 chars
-				if length of noteBody > 600 then
-					set noteBody to (characters 1 thru 600 of noteBody as string) & "…"
-				end if
+				set safeBody to do shell script "printf '%s' " & quoted form of rawBody & " | python3 -c 'import sys,json,re; t=sys.stdin.read(); t=re.sub(\"<[^>]+>\",\"\",t); t=t.replace(\"&amp;\",\"&\").replace(\"&lt;\",\"<\").replace(\"&gt;\",\">\").replace(\"&nbsp;\",\" \"); t=re.sub(r\"\\s+\",\" \",t).strip()[:600]; print(json.dumps(t)[1:-1])'"
 			on error
-				set noteBody to ""
+				set safeBody to ""
 			end try
 
 			-- Full body for Active note
 			if noteTitle is "Active" then
 				try
 					set rawBody to body of aNote
-					set activeNoteContent to do shell script "echo " & quoted form of rawBody & " | sed 's/<[^>]*>//g' | sed 's/&amp;/\\&/g' | sed 's/&lt;/</g' | sed 's/&gt;/>/g' | sed 's/&nbsp;/ /g'"
+					set activeNoteContent to do shell script "printf '%s' " & quoted form of rawBody & " | python3 -c 'import sys,json,re; t=sys.stdin.read(); t=re.sub(\"<[^>]+>\",\"\",t); t=t.replace(\"&amp;\",\"&\").replace(\"&lt;\",\"<\").replace(\"&gt;\",\">\").replace(\"&nbsp;\",\" \"); t=re.sub(r\"\\s+\",\" \",t).strip()[:3000]; print(json.dumps(t)[1:-1])'"
 				on error
 					set activeNoteContent to "(could not read Active note)"
 				end try
@@ -52,14 +48,8 @@ on run
 				set dateStr to dateStr & "-" & d
 			end if
 
-			-- Escape title for JSON
-			set safeTitle to do shell script "echo " & quoted form of noteTitle & " | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g'"
-
-			-- Escape body for JSON
-			set safeBody to ""
-			if noteBody is not "" then
-				set safeBody to do shell script "echo " & quoted form of noteBody & " | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g' | tr '\\n' '|'"
-			end if
+			-- Escape title for JSON using Python
+			set safeTitle to do shell script "printf '%s' " & quoted form of noteTitle & " | python3 -c 'import sys,json; t=sys.stdin.read().strip()[:200]; print(json.dumps(t)[1:-1])'"
 
 			set noteList to noteList & {"{\"title\":\"" & safeTitle & "\",\"modified\":\"" & dateStr & "\",\"body\":\"" & safeBody & "\"}"}
 		end repeat
@@ -76,11 +66,10 @@ on run
 	end repeat
 	set notesJSON to notesJSON & "]"
 
-	-- Escape active note for JSON
+	-- Escape active note for JSON using Python
+	set safeActive to ""
 	if activeNoteContent is not "" then
-		set safeActive to do shell script "echo " & quoted form of activeNoteContent & " | sed 's/\\\\/\\\\\\\\/g' | sed 's/\"/\\\\\"/g' | tr '\\n' '|'"
-	else
-		set safeActive to ""
+		set safeActive to activeNoteContent
 	end if
 
 	return "{\"notes\":" & notesJSON & ",\"active_note\":\"" & safeActive & "\"}"
