@@ -77,7 +77,7 @@ async function fetchTodaysEvents(tokenRow, dateStr) {
 }
 
 async function fetchAllAccountsEvents(dateStr) {
-  const tokens = db.getGoogleTokens();
+  const tokens = await db.getGoogleTokens();
   if (tokens.length === 0) return [];
 
   const results = await Promise.all(tokens.map((t) => fetchTodaysEvents(t, dateStr)));
