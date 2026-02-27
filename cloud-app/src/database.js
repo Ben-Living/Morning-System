@@ -87,6 +87,12 @@ async function initializeSchema() {
       created_at TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (aim_id) REFERENCES aims(id)
     );
+
+    CREATE TABLE IF NOT EXISTS orientation (
+      id SERIAL PRIMARY KEY,
+      content TEXT NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
   `);
 }
 
@@ -367,6 +373,24 @@ async function getAimHistory(limit = 10) {
   return result.rows;
 }
 
+// ─── Orientation ──────────────────────────────────────────────────────────────
+
+async function getOrientation() {
+  const result = await pool.query(
+    'SELECT * FROM orientation ORDER BY updated_at DESC LIMIT 1'
+  );
+  return result.rows[0] || null;
+}
+
+async function setOrientation(content) {
+  await pool.query('DELETE FROM orientation');
+  const result = await pool.query(
+    'INSERT INTO orientation (content, updated_at) VALUES ($1, NOW()) RETURNING *',
+    [content]
+  );
+  return result.rows[0];
+}
+
 module.exports = {
   pool,
   initializeSchema,
@@ -406,4 +430,7 @@ module.exports = {
   addAimReflection,
   getAimReflections,
   getAimHistory,
+  // Orientation
+  getOrientation,
+  setOrientation,
 };

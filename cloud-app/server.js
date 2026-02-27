@@ -13,6 +13,12 @@ const claude = require('./src/claude');
 const app = express();
 const NZ_TZ = 'Pacific/Auckland';
 
+const INITIAL_ORIENTATION = `I want to build a stable foundation for health, fitness and wellness in my life in a way that is relational and supportive of our family life.
+
+I want to challenge the notion that I or the world around me is wrong, and learn to love and accept the world and myself as they are.
+
+I want to engage in my day and my life with curiosity and energy, following my passion and vitality in ways that are creative and fulfilling, and mutually generative for my relationships.`;
+
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
 app.use(express.json());
@@ -43,21 +49,20 @@ function getNZDateStr() {
 }
 
 async function buildContext(dateStr) {
-  const [calEvents, emailData, snapshot, trackedItems, lifeWheelScores, currentAim] = await Promise.all([
+  const [calEvents, emailData, snapshot, trackedItems, lifeWheelScores, currentAim, orientationRow] = await Promise.all([
     calendar.fetchAllAccountsEvents(dateStr),
     gmail.fetchAllAccountsEmails(),
     db.getLatestSnapshot(),
     db.getUnresolvedTrackedItems(),
     db.getLatestLifeWheelScores(14),
     db.getCurrentAim(),
+    db.getOrientation(),
   ]);
 
-  // Get previous session summary
   const recent = await db.getRecentSessions(7);
   const previousSession = recent.find((s) => s.date < dateStr && s.summary);
   const previousSummary = previousSession ? previousSession.summary : null;
 
-  // Check if aim formation is needed
   let needsAimFormation = false;
   if (!currentAim) {
     needsAimFormation = true;
@@ -79,6 +84,7 @@ async function buildContext(dateStr) {
     lifeWheelScores,
     currentAim,
     needsAimFormation,
+    orientation: orientationRow ? orientationRow.content : null,
   });
 
   return { contextBlock, calEvents, emails: emailData.emails, starredEmails: emailData.starredEmails, snapshot, trackedItems };
@@ -176,7 +182,7 @@ app.get('/api/context', async (req, res) => {
   }
 });
 
-// ─── Routes: Chat (SSE streaming) ─────────────────────────────────────────────
+// ─── Routes: Chat (Morning Check-In, SSE streaming) ───────────────────────────
 
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
@@ -257,6 +263,68 @@ app.post('/api/session/open', async (req, res) => {
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
   } catch (err) {
     console.error('Open session error:', err);
+    res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+  } finally {
+    res.end();
+  }
+});
+
+// ─── Routes: Midday Chat (SSE streaming, ephemeral) ───────────────────────────
+
+app.post('/api/midday/chat', async (req, res) => {
+  const { message, history } = req.body;
+  if (!message) return res.status(400).json({ error: 'message required' });
+
+  const dateStr = getNZDateStr();
+  const { contextBlock } = await buildContext(dateStr);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  try {
+    for await (const chunk of claude.streamMiddayChat({
+      message,
+      history: Array.isArray(history) ? history : [],
+      contextBlock,
+    })) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    }
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+  } catch (err) {
+    console.error('Midday chat error:', err);
+    res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+  } finally {
+    res.end();
+  }
+});
+
+// ─── Routes: Reflect Chat (SSE streaming, ephemeral) ─────────────────────────
+
+app.post('/api/reflect/chat', async (req, res) => {
+  const { message, history } = req.body;
+  if (!message) return res.status(400).json({ error: 'message required' });
+
+  const dateStr = getNZDateStr();
+  const { contextBlock } = await buildContext(dateStr);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  try {
+    for await (const chunk of claude.streamReflectChat({
+      message,
+      history: Array.isArray(history) ? history : [],
+      contextBlock,
+    })) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    }
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+  } catch (err) {
+    console.error('Reflect chat error:', err);
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
   } finally {
     res.end();
@@ -375,6 +443,30 @@ app.post('/api/evening/complete', async (req, res) => {
   }
 });
 
+// ─── Routes: Orientation ──────────────────────────────────────────────────────
+
+app.get('/api/orientation', async (req, res) => {
+  try {
+    const row = await db.getOrientation();
+    res.json({ content: row ? row.content : '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/orientation', async (req, res) => {
+  const { content } = req.body;
+  if (typeof content !== 'string') {
+    return res.status(400).json({ error: 'content required' });
+  }
+  try {
+    const row = await db.setOrientation(content);
+    res.json({ ok: true, updated_at: row.updated_at });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Routes: Mac Agent Snapshot ───────────────────────────────────────────────
 
 app.post('/api/snapshot', requireAgentAuth, async (req, res) => {
@@ -401,6 +493,60 @@ app.get('/api/snapshot/status', async (req, res) => {
     note_count: JSON.parse(snapshot.notes || '[]').length,
     reminder_count: JSON.parse(snapshot.reminders || '[]').length,
   });
+});
+
+// ─── Routes: Export ───────────────────────────────────────────────────────────
+
+app.get('/api/export/today', async (req, res) => {
+  const dateStr = getNZDateStr();
+
+  try {
+    const session = await db.getTodaySession(dateStr);
+    if (!session || session.status !== 'complete' || !session.summary) {
+      return res.status(404).json({ error: 'No completed session for today' });
+    }
+
+    const [scores, aim] = await Promise.all([
+      db.getLifeWheelScores(1),
+      db.getCurrentAim(),
+    ]);
+
+    // Find today's scores (prefer morning)
+    const todayScores = scores.filter((s) => s.date === dateStr);
+    const scoreEntry = todayScores.find((s) => s.phase === 'morning') || todayScores[0];
+
+    const SCORE_SHORT = {
+      'Health and Well-being': 'Health',
+      'Career or Work': 'Work',
+      'Finances': 'Finances',
+      'Relationships': 'Relationships',
+      'Personal Growth': 'Personal Growth',
+      'Fun and Recreation': 'Fun',
+      'Physical Environment': 'Environment',
+      'Spirituality or Faith': 'Spirituality',
+      'Contribution and Service': 'Contribution',
+      'Love and Intimacy': 'Love',
+    };
+
+    let scoresLine = 'SCORES: (not recorded)';
+    if (scoreEntry) {
+      const parts = Object.entries(SCORE_SHORT).map(
+        ([full, short]) => `${short} ${scoreEntry.scores[full] ?? '?'}`
+      );
+      scoresLine = `SCORES: ${parts.join(', ')}`;
+    }
+
+    const aimLine = aim ? `AIM: ${aim.aim_statement}` : 'AIM: (none)';
+    const summaryLine = `SUMMARY: ${session.summary}`;
+
+    const output = `=== ${dateStr} ===\n${scoresLine}\n${aimLine}\n${summaryLine}\n---\n`;
+
+    res.set('Content-Type', 'text/plain');
+    res.send(output);
+  } catch (err) {
+    console.error('Export error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Routes: Tracked Items ────────────────────────────────────────────────────
@@ -553,8 +699,14 @@ app.get('/health', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 db.initializeSchema()
-  .then(() => {
+  .then(async () => {
     console.log('Database schema ready');
+    // Seed orientation if empty
+    const existing = await db.getOrientation();
+    if (!existing) {
+      await db.setOrientation(INITIAL_ORIENTATION);
+      console.log('Orientation document seeded');
+    }
     app.listen(PORT, () => {
       console.log(`Morning System running on port ${PORT}`);
       console.log(`NZ date: ${getNZDateStr()}`);

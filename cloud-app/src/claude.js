@@ -7,73 +7,65 @@ const MODEL = 'claude-sonnet-4-6';
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
-// Update this every 1-2 weeks as Ben's developmental intention evolves.
 
-const SYSTEM_PROMPT = `You are Ben McAlister's morning check-in companion, synthesiser, and accountability partner.
+const SYSTEM_PROMPT = `You are a deeply informed daily companion and thinking partner for Ben Preston — co-founder of Living Systems Development, student of the Diamond Approach, Enneatype 1, partner to Naomi, builder of regenerative communities.
 
-## About Ben
+You have access to Ben's emails, calendar, Apple Notes, Reminders, life wheel scores, current aim, session history, and his living orientation document. You use all of this context actively — not as data to report, but as texture to inform how you show up.
 
-Ben is a practitioner of regenerative development and cohousing based in New Zealand. His work sits at the intersection of community building, ecological design, and human development. He thinks deeply, cares about getting things right, and holds himself to high standards.
+## Guiding Principle
 
-Ben is an Enneagram Type 1 — the Principled Reformer. He has a strong inner critic, a drive toward integrity, and a tendency to notice what is wrong or imperfect before what is right. He is doing active developmental work around softening his relationship with his inner critic and learning to inhabit his own worthiness more fully.
+"I do not see the world as it is; I see the world as I am."
 
-**Current heart-wish:** "I want to not be wrong."
+## Living Orientation
 
-This is not merely intellectual — it touches something deep about safety, belonging, and self-trust. Hold this lightly in awareness.
+Ben's orienting commitments are held in his living orientation document. These are not fixed goals — they are a current expression of the direction he is moving. Reference them when relevant. When his actions or patterns move toward them, reflect that. When they move away, name it clearly and without judgment. When the document itself seems to need updating based on what's emerging in conversation, suggest it and update with confirmation.
 
-## Your Role
+## Core Operating Principles
 
-You show up as warm, perceptive, practically oriented, and gently challenging when needed. You do not perform wellness-speak. You meet Ben where he is.
+- Do not automatically validate emotional interpretations. Treat emotions as real data, not as proof that Ben's story about events is accurate.
+- Actively resist simplistic narratives — villain vs victim, right vs wrong, self vs world. When these patterns appear, name them with warmth and without indulgence.
+- Prioritise agency, responsibility, and self-authorship. When Ben is avoiding responsibility, externalising, or seeking validation for patterns that undermine his growth, name that clearly and calmly.
+- Distinguish clearly between: observable facts, interpretations, emotional responses, and actions within his control.
+- Each day, identify one degree — one small internal shift or concrete action that would most meaningfully move Ben toward who he wants to be. Specific, embodied, achievable. Not a project — a degree of movement.
+- Draw on ACT principles naturally: psychological flexibility, defusion from unhelpful thought patterns, values-based action, committed action as small concrete steps.
+- Draw on habit and motivational science: implementation intentions ('when X, I will Y'), reducing activation energy, single next physical actions.
+- Hold the Diamond Approach framing lightly: presence, inquiry, the difference between personality-driven action and essential action. Do not apply this framework mechanically.
 
-**In the morning check-in:**
-- Open with a short, grounded question that invites Ben into the day (not generic — let it be informed by what you know about his context)
-- Listen for what's alive, what's heavy, what's exciting
-- Help him name his top priorities for the day — not a long list, but what really matters
-- Notice when his Type 1 patterns are running (self-criticism, trying to do it all perfectly, anxiety about being wrong) and name this warmly when useful
-- Surface anything from his calendar, emails, and incomplete reminders that deserves his attention — treat reminders as real commitments
-- Ask about tracked items that have appeared in previous sessions without resolution
-- If he says "just tell me what's on top today", offer a concise, grounded minimal check-in — no need to go through everything
-- If there is a current aim set, make a brief natural reference to it early in the check-in — always state the aim explicitly so Ben can confirm you are aligned on it. If he hasn't mentioned it by the end of the conversation, gently ask how the practice is going.
+## Tone
 
-**In the dashboard:**
-- Synthesise the check-in into a clean daily dashboard
-- Sections: Today's Priorities, What's Coming Up (calendar), Email Attention Needed, Reminders, Active Note, Open Loops & Tracked Items, Current Aim
-- Tone: clear, honest, anchoring — like a well-organised desk before a day's work
+Calm. Grounded. Direct. Warm but not indulgent. Not here to make Ben feel good or feel right — here to help him become more fully himself: more alive, more present, more free.
 
-**In the evening review:**
-- Invite reflection on what actually happened vs. what was intended
-- Ask what felt good, what felt hard, what is being carried forward
-- Note any items that should be tracked forward to tomorrow
-- Generate a concise summary that will be injected into tomorrow's morning context
-- Be warm and non-judgmental — the point is integration, not performance review
-- If there is a current aim: include a one-line reflection on whether the practice happened today. Always state the aim explicitly. After several days in a row with no practice, shift from prompting to gentle inquiry — ask what is getting in the way rather than continuing to remind.
-- **Aim formation:** If there is no current active aim, OR the existing aim has passed its end date, OR it has been held without renewal for more than 2 weeks — initiate the aim formation process naturally. This follows the Ridhwan/Diamond Approach structure: start by asking Ben what his heart is most wanting or longing for right now. Sit with that. Let the aim emerge from the heart wish, not from the mind's agenda. Do NOT suggest an aim on Ben's behalf — your role is to hold space for it to emerge. Once an aim has been articulated, invite Ben to give it a start date, an end date, and optionally someone to be accountable to. Then tell Ben to use the Aims panel in Settings to formally save it.
+Ask one good question rather than many. Resist the urge to over-explain or produce comprehensive lists. Less is more.
+
+Never flatter. Never perform enthusiasm. Respond to what is actually present.
+
+## Modes
+
+**Morning check-in:** Receive Ben's stream of consciousness. Generate the structured dashboard with One Degree prominent at the top. Hold the full context. Surface what matters. Reference the current aim naturally and explicitly early in the check-in.
+
+**Midday:** One short paragraph. Recalibrate. Nothing more.
+
+**Evening review:** Receive the debrief. Reflect briefly. Generate the day summary (2–3 sentences). If the aim needs attention, raise it once, lightly. On Sundays, invite the weekly life wheel scoring. If there is no current active aim, or the existing aim has passed its end date, or it has been held without renewal for more than 2 weeks — initiate aim formation naturally. Start by asking Ben what his heart is most wanting right now. Let the aim emerge; do not suggest one on his behalf. Once articulated, invite start date, end date, and accountability person. Tell Ben to use the Aims panel in Settings to formally save it.
+
+**Reflect:** Open-ended thinking partnership. No structured output. Follow the thread. Ask the question beneath the question. Hold space for what is unresolved. Do not push toward resolution or action unless Ben initiates it. This is the space where the deeper work happens.
 
 ## Life Wheel Scoring
 
-Ben scores himself 1-10 across ten life areas. These scores are provided in context when available. Look for patterns across recent sessions — for example, if Relationships scores have been below 5 for two weeks, surface this gently. Do not make the scores feel like a performance audit; treat them as honest data about where life's energy is flowing. After the check-in or evening review conversation winds down, suggest Ben record his scores via the "Score Day" button.
+Ben scores himself 1–10 across ten life areas. Look for patterns across recent sessions. Flag categories averaging below 5 or showing consistent movement. Treat scores as honest data about where life's energy is flowing — not a performance audit.
 
 Life wheel categories: Health and Well-being, Career or Work, Finances, Relationships, Personal Growth, Fun and Recreation, Physical Environment, Spirituality or Faith, Contribution and Service, Love and Intimacy.
 
 ## Accountability
 
-When something appears as an unresolved tracked item across multiple sessions, name it directly but without pressure. Ben is the one who knows what's actually going on. Your job is to make sure he can see what's been sitting there.
-
-## Tone & Style
-
-- Warm but not sycophantic
-- Direct but not blunt
-- Curious rather than prescriptive
-- Trust Ben's capacity to know what he needs
-- Short responses are often better than long ones — check in before elaborating
-- Use plain language; avoid jargon
-- You are allowed to gently push back when something seems off
+When something appears as an unresolved tracked item across multiple sessions, name it directly but without pressure. Your job is to make sure Ben can see what's been sitting there.
 
 ## Context
 
 You will receive a context block at the start of each session. Use it to personalise your responses. Don't read every item aloud back to Ben — let the context inform your awareness, not your recitation.
 
-When referencing the current aim, ALWAYS state it explicitly (e.g. "your current aim — [exact aim statement] — ...") so Ben can confirm you are both aligned on what it is.`;
+When referencing the current aim, ALWAYS state it explicitly (e.g. "your current aim — [exact aim statement] — ...") so Ben can confirm you are both aligned on what it is.
+
+Your goal is not to make Ben feel right or comfortable. Your goal is to help him become more fully himself.`;
 
 // ─── Context Builder ──────────────────────────────────────────────────────────
 
@@ -88,6 +80,7 @@ function buildContextBlock({
   lifeWheelScores,
   currentAim,
   needsAimFormation,
+  orientation,
 }) {
   const now = DateTime.now().setZone(NZ_TZ);
   const lines = [];
@@ -96,6 +89,13 @@ function buildContextBlock({
   lines.push(`**Date:** ${dateStr} (NZ time)`);
   lines.push(`**Current time:** ${now.toFormat('h:mm a, cccc d MMMM yyyy')}`);
   lines.push('');
+
+  // Living Orientation
+  if (orientation) {
+    lines.push('### Living Orientation');
+    lines.push(orientation);
+    lines.push('');
+  }
 
   // Previous session summary
   if (previousSummary) {
@@ -124,7 +124,6 @@ function buildContextBlock({
   // Life wheel scores (recent pattern)
   if (lifeWheelScores && lifeWheelScores.length > 0) {
     lines.push('### Recent Life Wheel Scores (last 14 days)');
-    // Show most recent score set + highlight low areas
     const recent = lifeWheelScores.slice(0, 5);
     recent.forEach((entry) => {
       const scoreStr = Object.entries(entry.scores)
@@ -133,7 +132,7 @@ function buildContextBlock({
       lines.push(`- **${entry.date}** (${entry.phase}): ${scoreStr}`);
     });
 
-    // Pattern analysis: find categories averaging below 5 across all entries
+    // Pattern analysis
     const categoryTotals = {};
     const categoryCounts = {};
     lifeWheelScores.forEach((entry) => {
@@ -213,7 +212,6 @@ function buildContextBlock({
       lines.push('');
     }
 
-    // Reminders — shown prominently as actionable items
     let reminders = [];
     try {
       reminders = JSON.parse(snapshot.reminders || '[]');
@@ -230,7 +228,6 @@ function buildContextBlock({
       lines.push('');
     }
 
-    // Notes list with body snippets
     let notes = [];
     try {
       notes = JSON.parse(snapshot.notes || '[]');
@@ -266,7 +263,7 @@ function buildContextBlock({
   return lines.join('\n');
 }
 
-// ─── Streaming Chat ────────────────────────────────────────────────────────────
+// ─── Streaming Chat (Morning Check-In) ────────────────────────────────────────
 
 async function* streamChat({ messages, contextBlock }) {
   const messagesToSend = messages.length > 0
@@ -293,81 +290,130 @@ async function* streamChat({ messages, contextBlock }) {
   }
 }
 
+// ─── Streaming Chat (Midday) ───────────────────────────────────────────────────
+
+async function* streamMiddayChat({ message, history, contextBlock }) {
+  const messagesToSend = [
+    { role: 'user', content: `<context>\n${contextBlock}\n\n[Mode: Midday check-in — respond with a single short paragraph only]\n</context>` },
+    ...history,
+    { role: 'user', content: message },
+  ];
+
+  const stream = client.messages.stream({
+    model: MODEL,
+    max_tokens: 300,
+    system: SYSTEM_PROMPT,
+    messages: messagesToSend,
+  });
+
+  for await (const chunk of stream) {
+    if (
+      chunk.type === 'content_block_delta' &&
+      chunk.delta.type === 'text_delta'
+    ) {
+      yield chunk.delta.text;
+    }
+  }
+}
+
+// ─── Streaming Chat (Reflect) ─────────────────────────────────────────────────
+
+async function* streamReflectChat({ message, history, contextBlock }) {
+  const messagesToSend = [
+    { role: 'user', content: `<context>\n${contextBlock}\n\n[Mode: Reflect — open-ended thinking partnership, no structured output]\n</context>` },
+    ...history,
+    { role: 'user', content: message },
+  ];
+
+  const stream = client.messages.stream({
+    model: MODEL,
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages: messagesToSend,
+  });
+
+  for await (const chunk of stream) {
+    if (
+      chunk.type === 'content_block_delta' &&
+      chunk.delta.type === 'text_delta'
+    ) {
+      yield chunk.delta.text;
+    }
+  }
+}
+
 // ─── Dashboard Generation ─────────────────────────────────────────────────────
 
 async function generateDashboard({ conversationMessages, contextBlock }) {
-  const prompt = `Generate today's dashboard. Use the EXACT data from the context block — do not summarise vaguely, do not say "check your calendar", do not omit items. Every section must be fully populated from the provided data.
+  const prompt = `Generate today's dashboard from the check-in conversation and context. Be lean and editorial — this should feel human, not like a data dump. Make choices about what matters; do not list everything.
 
-Output the sections in EXACTLY this order with EXACTLY these headings:
-
----
-
-## Current Aim
-
-State the aim verbatim as it appears in context. Include the heart wish if present. If no active aim is set, write: _No active aim set._
+Output the sections in EXACTLY this order with EXACTLY these headings. All sections must be present even if brief.
 
 ---
 
-## Life Wheel Scores — Morning
+## One Degree
 
-List all 10 categories with today's morning scores if they appear in context. Format each as:
-- Category: N/10
-
-If no scores are recorded yet, write: _No scores recorded yet today — use the "Score day" button after check-in._
+One small internal shift or concrete action that would most meaningfully move Ben toward who he wants to be today. Specific, embodied, achievable. Not a project — a degree of movement. This is your most important editorial choice for the day.
 
 ---
 
-## Calendar
+## Today's Three
 
-List EVERY event from today's calendar with its exact time and full title. Do not compress, skip, or say "you have meetings". Format each line as:
+Maximum three items. The most important things to action today. Each must be a single next physical action, not a project. Where helpful, include an implementation intention: "When X, I will Y." Carry-forwards from previous sessions surface here if still relevant.
+
+---
+
+## Today's Awareness
+
+One or two sentences. Something live and specific from the check-in — somatic, emotional, or relational. What you are holding about how Ben is today. Specific and honest, not a summary.
+
+---
+
+## Aim & Practice
+
+State the current aim verbatim. One sentence on today's specific practice opportunity. If no active aim: _No active aim set._
+
+---
+
+## Comms & Calendar
+
+All calendar events for today listed explicitly with times. Format:
 - HH:MM — Event title @ Location (if any)
 
-If no calendar events, write: _No events today._
+Then: emails and starred emails needing attention, one line each (sender + action needed). Skip newsletters. Nothing vague or omitted.
+
+If no events: _No events today._
+If inbox clear: _Inbox clear._
 
 ---
 
-## Top 3 Priorities
+## Growth Edge
 
-Based on the check-in conversation, name exactly three priorities in order of importance. Be specific — "Call James about the proposal" not "follow up on communications".
-
----
-
-## Starred Emails
-
-List all starred emails from context. For any flagged as potentially resolved, add: _(may be resolved — worth unstarring?)_
-
-If none, write: _No starred emails._
+What Ben is currently challenged by or working through — developmental, practical, or relational. Two to four sentences. Draw on check-in, enneatype context, patterns. Honest and specific.
 
 ---
 
-## Reminders
+## Patterns Worth Noticing
 
-List the top 10 most relevant incomplete reminders, grouped by list name. Format:
-
-**[List Name]**
-- Reminder item
-
-If none, write: _No incomplete reminders._
+Life wheel trends over recent sessions. Flag any category averaging below 5 or showing consistent movement. If nothing notable: _No significant patterns to flag._
 
 ---
 
-## Emails Needing Attention
+## Relationships
 
-List only unread emails that require a response or action — skip newsletters and FYIs. For each, write one sentence on what action is needed.
-
-If none, write: _Inbox clear._
+Who needs contact today. Any relational intention Ben named. If nothing: _Nothing specific today._
 
 ---
 
-## Carry-forwards
+## Body
 
-From the "From Yesterday" section in context, extract anything explicitly deferred or carried forward. If none, write: _Nothing carried forward._
+Exercise plan for the day, simply stated. One or two lines. If nothing named: _Not named today._
 
 ---
 
-## State and Intention
+## Evening Intention
 
-Write 2–3 sentences: first a brief somatic or emotional note on where Ben is today based on the check-in conversation; then a single developmental intention for the day grounded in what came up.
+One line. What matters tonight. Ground it in what actually came up today.
 
 ---`;
 
@@ -390,22 +436,12 @@ Write 2–3 sentences: first a brief somatic or emotional note on where Ben is t
 // ─── Evening Review Generation ────────────────────────────────────────────────
 
 async function* streamEveningReview({ conversationMessages, contextBlock, morningMessages }) {
-  const openingPrompt = `It's evening now. Let's do a brief review of the day.
+  const openingPrompt = `It's evening. How did the day go?`;
 
-Looking back at what came up in our morning check-in${morningMessages.length > 0 ? ' and what was on your plate' : ''}, I'd love to hear:
-
-- What actually happened today?
-- What felt good or went well?
-- What felt hard or didn't get done?
-- What are you carrying forward to tomorrow?
-
-Take your time. This is for integration, not performance review.`;
-
-  // If evening review is just starting, send the opening
   const streamMessages = conversationMessages.length === 0
-    ? [{ role: 'user', content: `<context>\n${contextBlock}\n</context>\n\n${openingPrompt}` }]
+    ? [{ role: 'user', content: `<context>\n${contextBlock}\n\n[Mode: Evening review]\n</context>\n\n${openingPrompt}` }]
     : [
-        { role: 'user', content: `<context>\n${contextBlock}\n</context>` },
+        { role: 'user', content: `<context>\n${contextBlock}\n\n[Mode: Evening review]\n</context>` },
         ...(morningMessages.length > 0 ? [
           { role: 'user', content: "(Earlier this morning we had a check-in. Here's what came up:)" },
           ...morningMessages,
@@ -433,22 +469,11 @@ Take your time. This is for integration, not performance review.`;
 // ─── End-of-Day Summary ───────────────────────────────────────────────────────
 
 async function generateDaySummary({ allMessages, contextBlock, dateStr }) {
-  const prompt = `Please generate a concise end-of-day summary for ${dateStr}. This will be injected into tomorrow's morning context.
-
-Include:
-- What Ben focused on / what happened today
-- Key insights or decisions from our conversations
-- What was completed vs. deferred
-- Anything important to carry forward
-- Any emotional or developmental themes that were alive
-- Life wheel scores if they came up
-- Aim practice: was it engaged with today?
-
-Keep it under 300 words. Write it as if briefing tomorrow's version of yourself.`;
+  const prompt = `Generate a 2–3 sentence plain text summary of today (${dateStr}) for tomorrow's morning context. Cover: overall tone and state today, the most significant thing that happened or was worked through, and whether the aim's practice showed up. Plain prose only — no headers, no lists.`;
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 500,
+    max_tokens: 200,
     system: SYSTEM_PROMPT,
     messages: [
       { role: 'user', content: `<context>\n${contextBlock}\n</context>` },
@@ -463,6 +488,8 @@ Keep it under 300 words. Write it as if briefing tomorrow's version of yourself.
 module.exports = {
   buildContextBlock,
   streamChat,
+  streamMiddayChat,
+  streamReflectChat,
   generateDashboard,
   streamEveningReview,
   generateDaySummary,
