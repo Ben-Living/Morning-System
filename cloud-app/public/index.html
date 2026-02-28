@@ -13,28 +13,23 @@
 </head>
 <body>
   <div id="app">
+
     <!-- Header -->
     <header id="header">
       <div class="header-inner">
         <span id="header-date" class="header-date"></span>
         <button id="menu-btn" class="icon-btn" title="Settings">⋯</button>
       </div>
-      <!-- View tabs -->
-      <div class="tab-bar">
-        <button class="tab active" data-view="checkin">Check-In</button>
-        <button class="tab" data-view="dashboard">Dashboard</button>
-        <button class="tab" data-view="midday">Midday</button>
-        <button class="tab" data-view="evening">Evening</button>
-        <button class="tab" data-view="reflect">Reflect</button>
-      </div>
     </header>
 
-    <!-- Views -->
+    <!-- Global status bar -->
+    <div id="checkin-status" class="status-bar hidden"></div>
+
+    <!-- Main content area -->
     <main id="main">
 
-      <!-- ── Check-In View ── -->
-      <div id="view-checkin" class="view active">
-        <div id="checkin-status" class="status-bar hidden"></div>
+      <!-- Primary: Check-In -->
+      <div id="primary-checkin" class="primary-view">
         <div id="messages" class="messages-container"></div>
         <div class="input-area" id="checkin-input-area">
           <div class="input-row">
@@ -55,19 +50,61 @@
         </div>
       </div>
 
-      <!-- ── Dashboard View ── -->
-      <div id="view-dashboard" class="view hidden">
+      <!-- Primary: Dashboard -->
+      <div id="primary-dashboard" class="primary-view hidden">
+        <div id="evening-prompt" class="evening-prompt hidden">
+          <p>Getting towards the end of the day — good time for an evening reflection when you're ready.</p>
+          <button id="evening-prompt-btn">Open →</button>
+        </div>
         <div id="dashboard-content" class="prose-content">
           <div class="empty-state">
             <p>No dashboard yet.</p>
             <p class="muted">Complete your morning check-in, then generate it.</p>
-            <button id="gen-dashboard-btn-2" class="btn-primary">Generate dashboard</button>
           </div>
         </div>
       </div>
 
-      <!-- ── Midday View ── -->
-      <div id="view-midday" class="view hidden">
+    </main>
+
+    <!-- More bar -->
+    <div id="more-bar" class="more-bar">
+      <button id="more-btn" class="more-btn-inner">···</button>
+    </div>
+
+    <!-- Secondary panel (bottom sheet: Evening / Midday / Reflect) -->
+    <div id="secondary-panel" class="panel hidden">
+      <div class="secondary-header">
+        <div class="secondary-tabs">
+          <button class="secondary-tab active" data-sec="evening">Evening</button>
+          <button class="secondary-tab" data-sec="midday">Midday</button>
+          <button class="secondary-tab" data-sec="reflect">Reflect</button>
+        </div>
+        <button id="close-secondary-btn" class="icon-btn">✕</button>
+      </div>
+
+      <!-- Evening -->
+      <div id="sec-evening" class="sec-content">
+        <div id="evening-messages" class="messages-container"></div>
+        <div class="input-area">
+          <div class="input-row">
+            <textarea
+              id="evening-input"
+              placeholder="How did the day go?"
+              rows="1"
+              autocomplete="off"
+              autocorrect="on"
+              spellcheck="true"
+            ></textarea>
+            <button id="evening-send-btn" class="send-btn" title="Send">↑</button>
+          </div>
+          <div class="quick-actions">
+            <button class="quick-btn" id="complete-day-btn">Complete day &amp; save summary</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Midday -->
+      <div id="sec-midday" class="sec-content hidden">
         <div id="midday-messages" class="messages-container"></div>
         <div class="input-area">
           <div class="input-row">
@@ -84,29 +121,8 @@
         </div>
       </div>
 
-      <!-- ── Evening Review View ── -->
-      <div id="view-evening" class="view hidden">
-        <div id="evening-messages" class="messages-container"></div>
-        <div class="input-area">
-          <div class="input-row">
-            <textarea
-              id="evening-input"
-              placeholder="How did the day go?"
-              rows="1"
-              autocomplete="off"
-              autocorrect="on"
-              spellcheck="true"
-            ></textarea>
-            <button id="evening-send-btn" class="send-btn" title="Send">↑</button>
-          </div>
-          <div class="quick-actions">
-            <button class="quick-btn" id="complete-day-btn">Complete day & save summary</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Reflect View ── -->
-      <div id="view-reflect" class="view hidden">
+      <!-- Reflect -->
+      <div id="sec-reflect" class="sec-content hidden">
         <!-- Living Orientation -->
         <div id="orientation-section" class="orientation-section">
           <div class="orientation-header">
@@ -122,13 +138,12 @@
             </div>
           </div>
         </div>
-
         <div id="reflect-messages" class="messages-container"></div>
         <div class="input-area">
           <div class="input-row">
             <textarea
               id="reflect-input"
-              placeholder="What's on your mind?"
+              placeholder="What's on top?"
               rows="1"
               autocomplete="off"
               autocorrect="on"
@@ -138,8 +153,9 @@
           </div>
         </div>
       </div>
+    </div>
 
-    </main>
+    <div id="secondary-overlay" class="overlay hidden"></div>
 
     <!-- Settings Panel -->
     <div id="settings-panel" class="panel hidden">
@@ -176,27 +192,6 @@
             <button id="add-tracked-btn" class="btn-secondary">Add</button>
           </div>
         </section>
-
-        <section>
-          <h3>Current Aim</h3>
-          <div id="aim-display"></div>
-          <div id="aim-form" class="aim-form hidden">
-            <input id="aim-heart-wish" type="text" placeholder="Heart wish (what your heart is longing for)" />
-            <textarea id="aim-statement" placeholder="Aim statement (what you are practising)" rows="2"></textarea>
-            <div class="aim-form-row">
-              <input id="aim-start-date" type="date" title="Start date" />
-              <input id="aim-end-date" type="date" title="End date (optional)" />
-            </div>
-            <input id="aim-accountability" type="text" placeholder="Accountability person (optional)" />
-            <div class="connect-row">
-              <button id="aim-save-btn" class="btn-secondary">Save aim</button>
-              <button id="aim-cancel-btn" class="btn-secondary">Cancel</button>
-            </div>
-          </div>
-          <div class="connect-row" id="aim-actions">
-            <button id="aim-new-btn" class="btn-secondary">Set new aim</button>
-          </div>
-        </section>
       </div>
     </div>
 
@@ -206,6 +201,7 @@
     <div id="loading" class="loading-overlay hidden">
       <div class="spinner"></div>
     </div>
+
   </div>
 
   <script src="app.js"></script>

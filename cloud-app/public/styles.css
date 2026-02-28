@@ -86,52 +86,95 @@ html, body {
 
 .icon-btn:hover { color: var(--accent); }
 
-/* Tab bar */
-.tab-bar {
+/* ── More Bar ────────────────────────────────────────────────────────────── */
+.more-bar {
+  flex-shrink: 0;
   display: flex;
-  padding: 0 12px 10px;
-  gap: 2px;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 0 10px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
 }
 
-.tab {
-  flex: 1;
-  padding: 6px 8px;
-  border: none;
+.more-btn-inner {
   background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 20px;
+  padding: 4px 24px;
   cursor: pointer;
-  font-size: 13px;
-  font-family: var(--font-body);
-  font-weight: 400;
-  color: var(--text-muted);
+  letter-spacing: 3px;
+  line-height: 1;
   border-radius: var(--radius-sm);
   transition: color 0.15s;
 }
 
-.tab:hover { color: var(--accent); }
+.more-btn-inner:hover { color: var(--accent); }
 
-.tab.active {
-  color: var(--accent);
-  font-weight: 600;
-  border-bottom: 2px solid var(--accent);
-  border-radius: 0;
-}
-
-/* ── Main / Views ────────────────────────────────────────────────────────── */
+/* ── Main / Primary Views ────────────────────────────────────────────────── */
 #main {
   flex: 1;
-  overflow: hidden;
-  position: relative;
-}
-
-.view {
-  position: absolute;
-  inset: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 
-.view.hidden { display: none; }
-.view.active { display: flex; }
+.primary-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.primary-view.hidden { display: none; }
+
+/* Evening prompt banner inside the dashboard primary view */
+.evening-prompt {
+  flex-shrink: 0;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.evening-prompt p {
+  flex: 1;
+  font-size: 15px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.evening-prompt button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 4px 0;
+}
+
+.evening-prompt button:hover { color: var(--accent-hover); }
+
+/* Missed check-in prompt */
+.missed-checkin-prompt {
+  align-self: flex-start;
+  background: var(--assistant-bubble);
+  border-radius: var(--radius);
+  border-bottom-left-radius: 3px;
+  padding: 14px 18px;
+  max-width: 90%;
+  font-size: 17px;
+  color: var(--text-muted);
+  animation: fadeUp 0.2s ease;
+}
 
 /* ── Status bar ──────────────────────────────────────────────────────────── */
 .status-bar {
@@ -411,7 +454,8 @@ textarea::placeholder { color: var(--text-faint); font-style: italic; }
 .quick-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Dashboard View ──────────────────────────────────────────────────────── */
-#view-dashboard {
+#dashboard-content {
+  flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -844,6 +888,66 @@ textarea::placeholder { color: var(--text-faint); font-style: italic; }
 /* ── Utilities ───────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .muted { color: var(--text-muted); }
+
+/* ── Secondary Panel ─────────────────────────────────────────────────────── */
+.secondary-header {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding-right: 8px;
+}
+
+.secondary-tabs {
+  display: flex;
+  gap: 0;
+}
+
+.secondary-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 12px 16px 10px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.secondary-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.secondary-tab:hover { color: var(--accent); }
+
+.sec-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.sec-content.hidden { display: none; }
+
+/* ── Dashboard Primary Sections ──────────────────────────────────────────── */
+.dash-primary-section {
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 28px;
+}
+
+.dash-primary-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.dash-more-section {
+  margin-top: 8px;
+}
 
 /* ── Aims ─────────────────────────────────────────────────────────────────── */
 .aim-card {
