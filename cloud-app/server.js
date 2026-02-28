@@ -22,6 +22,9 @@ I want to engage in my day and my life with curiosity and energy, following my p
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
+// Trust reverse proxy (fixes req.protocol under HTTPS load balancer/ngrok/Railway etc.)
+app.set('trust proxy', 1);
+
 app.use(express.json());
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || true, credentials: true }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -145,22 +148,29 @@ app.delete('/api/accounts/:email', async (req, res) => {
 
 app.get('/auth/oura', (req, res) => {
   const redirectUri = `${req.protocol}://${req.get('host')}/auth/oura/callback`;
+  console.log('[Oura] Starting OAuth, redirect_uri:', redirectUri);
   res.redirect(oura.getAuthUrl(redirectUri));
 });
 
 app.get('/auth/oura/callback', async (req, res) => {
-  const { code } = req.query;
+  const { code, error } = req.query;
+  if (error) {
+    console.error('[Oura] OAuth denied by user or provider:', error);
+    return res.redirect('/?error=oura_denied');
+  }
   if (!code) return res.redirect('/?error=no_code');
 
   try {
     const redirectUri = `${req.protocol}://${req.get('host')}/auth/oura/callback`;
+    console.log('[Oura] Exchanging code, redirect_uri:', redirectUri);
     const tokens = await oura.exchangeCodeForTokens(code, redirectUri);
     const expiryDate = Date.now() + (tokens.expires_in || 86400) * 1000;
-    await db.saveOuraToken(tokens.access_token, tokens.refresh_token, expiryDate);
+    await db.saveOuraToken(tokens.access_token, tokens.refresh_token || null, expiryDate);
+    console.log('[Oura] Token saved, expires_in:', tokens.expires_in);
     res.redirect('/?oura_connected=true');
   } catch (err) {
-    console.error('Oura OAuth callback error:', err);
-    res.redirect('/?error=oura_failed');
+    console.error('[Oura] OAuth callback error:', err.message);
+    res.redirect(`/?error=oura_failed&detail=${encodeURIComponent(err.message.slice(0, 120))}`);
   }
 });
 
@@ -170,6 +180,36 @@ app.get('/api/oura/status', async (req, res) => {
     res.json({ connected });
   } catch {
     res.json({ connected: false });
+  }
+});
+
+// Diagnostic: shows token metadata + attempts a live data fetch (do not expose publicly)
+app.get('/api/oura/debug', async (req, res) => {
+  try {
+    const tokenRow = await db.getOuraToken();
+    if (!tokenRow) return res.json({ connected: false, message: 'No token stored' });
+
+    const now = Date.now();
+    const expiresIn = tokenRow.expiry_date ? Math.round((Number(tokenRow.expiry_date) - now) / 1000) : null;
+    const dateStr = getNZDateStr();
+
+    let fetchResult = null;
+    try {
+      fetchResult = await oura.fetchOuraData(dateStr);
+    } catch (e) {
+      fetchResult = { error: e.message };
+    }
+
+    res.json({
+      connected: true,
+      tokenStored: true,
+      expiresInSeconds: expiresIn,
+      expired: expiresIn !== null && expiresIn < 0,
+      dateQueried: dateStr,
+      data: fetchResult,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
