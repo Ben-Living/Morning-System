@@ -147,6 +147,9 @@ app.delete('/api/accounts/:email', async (req, res) => {
 // ─── Routes: Oura OAuth ───────────────────────────────────────────────────────
 
 app.get('/auth/oura', (req, res) => {
+  if (!oura.isConfigured()) {
+    return res.redirect('/?error=oura_not_configured');
+  }
   const redirectUri = `${req.protocol}://${req.get('host')}/auth/oura/callback`;
   console.log('[Oura] Starting OAuth, redirect_uri:', redirectUri);
   res.redirect(oura.getAuthUrl(redirectUri));
@@ -176,18 +179,32 @@ app.get('/auth/oura/callback', async (req, res) => {
 
 app.get('/api/oura/status', async (req, res) => {
   try {
-    const connected = await oura.isConnected();
-    res.json({ connected });
+    const configured = oura.isConfigured();
+    const connected = configured ? await oura.isConnected() : false;
+    res.json({ configured, connected });
   } catch {
-    res.json({ connected: false });
+    res.json({ configured: false, connected: false });
   }
 });
 
-// Diagnostic: shows token metadata + attempts a live data fetch (do not expose publicly)
+// Diagnostic: config + token metadata + live data fetch
 app.get('/api/oura/debug', async (req, res) => {
+  const redirectUri = `${req.protocol}://${req.get('host')}/auth/oura/callback`;
+  const configured = oura.isConfigured();
+
+  if (!configured) {
+    return res.json({
+      configured: false,
+      message: 'OURA_CLIENT_ID and/or OURA_CLIENT_SECRET env vars are not set',
+      redirectUri,
+    });
+  }
+
   try {
     const tokenRow = await db.getOuraToken();
-    if (!tokenRow) return res.json({ connected: false, message: 'No token stored' });
+    if (!tokenRow) {
+      return res.json({ configured: true, connected: false, message: 'No token stored — OAuth not completed', redirectUri });
+    }
 
     const now = Date.now();
     const expiresIn = tokenRow.expiry_date ? Math.round((Number(tokenRow.expiry_date) - now) / 1000) : null;
@@ -201,15 +218,17 @@ app.get('/api/oura/debug', async (req, res) => {
     }
 
     res.json({
+      configured: true,
       connected: true,
       tokenStored: true,
+      redirectUri,
       expiresInSeconds: expiresIn,
       expired: expiresIn !== null && expiresIn < 0,
       dateQueried: dateStr,
       data: fetchResult,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, redirectUri });
   }
 });
 

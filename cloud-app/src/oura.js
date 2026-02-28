@@ -1,15 +1,29 @@
 const db = require('./database');
 
-const CLIENT_ID = process.env.OURA_CLIENT_ID;
-const CLIENT_SECRET = process.env.OURA_CLIENT_SECRET;
 const API_BASE = 'https://api.ouraring.com/v2';
+
+// Read credentials lazily so changes to env vars after startup are picked up
+// and so we can surface a clear error when they're missing.
+function credentials() {
+  const clientId = process.env.OURA_CLIENT_ID;
+  const clientSecret = process.env.OURA_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('OURA_CLIENT_ID and OURA_CLIENT_SECRET must be set as environment variables');
+  }
+  return { clientId, clientSecret };
+}
+
+function isConfigured() {
+  return !!(process.env.OURA_CLIENT_ID && process.env.OURA_CLIENT_SECRET);
+}
 
 // ─── OAuth ─────────────────────────────────────────────────────────────────────
 
 function getAuthUrl(redirectUri) {
+  const { clientId } = credentials();
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: CLIENT_ID,
+    client_id: clientId,
     redirect_uri: redirectUri,
     scope: 'daily',
   });
@@ -17,12 +31,13 @@ function getAuthUrl(redirectUri) {
 }
 
 async function exchangeCodeForTokens(code, redirectUri) {
+  const { clientId, clientSecret } = credentials();
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
     redirect_uri: redirectUri,
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
+    client_id: clientId,
+    client_secret: clientSecret,
   });
 
   const res = await fetch('https://api.ouraring.com/oauth/token', {
@@ -40,11 +55,12 @@ async function exchangeCodeForTokens(code, redirectUri) {
 }
 
 async function refreshAccessToken(refreshToken) {
+  const { clientId, clientSecret } = credentials();
   const params = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
+    client_id: clientId,
+    client_secret: clientSecret,
   });
 
   const res = await fetch('https://api.ouraring.com/oauth/token', {
@@ -138,4 +154,4 @@ async function isConnected() {
   return !!token;
 }
 
-module.exports = { getAuthUrl, exchangeCodeForTokens, fetchOuraData, isConnected };
+module.exports = { getAuthUrl, exchangeCodeForTokens, fetchOuraData, isConnected, isConfigured };

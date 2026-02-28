@@ -880,8 +880,12 @@ window.disconnectAccount = async function (email) {
 
 async function loadOuraStatus() {
   try {
-    const { connected } = await get('/api/oura/status');
-    if (connected) {
+    const { configured, connected } = await get('/api/oura/status');
+    if (!configured) {
+      els.ouraStatus.className = 'agent-status missing';
+      els.ouraStatus.textContent = 'OURA_CLIENT_ID / OURA_CLIENT_SECRET not set in environment';
+      els.ouraConnectRow.innerHTML = '';
+    } else if (connected) {
       els.ouraStatus.className = 'agent-status ok';
       els.ouraStatus.textContent = 'Connected — biometrics available';
       els.ouraConnectRow.innerHTML = `<button class="btn-danger" onclick="disconnectOura()">Disconnect Oura</button>`;
