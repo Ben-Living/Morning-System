@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <title>Morning System</title>
+  <title>Daily Orientation</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -17,7 +17,6 @@
     <header id="header">
       <div class="header-inner">
         <span id="header-date" class="header-date"></span>
-        <div class="header-title">Morning System</div>
         <button id="menu-btn" class="icon-btn" title="Settings">⋯</button>
       </div>
       <!-- View tabs -->
@@ -37,7 +36,7 @@
       <div id="view-checkin" class="view active">
         <div id="checkin-status" class="status-bar hidden"></div>
         <div id="messages" class="messages-container"></div>
-        <div class="input-area">
+        <div class="input-area" id="checkin-input-area">
           <div class="input-row">
             <textarea
               id="chat-input"
@@ -50,20 +49,14 @@
             <button id="send-btn" class="send-btn" title="Send">↑</button>
           </div>
           <div class="quick-actions">
-            <button class="quick-btn" data-msg="Just tell me what's on top today.">Quick mode</button>
-            <button class="quick-btn" id="score-morning-btn">Score day →</button>
-            <button class="quick-btn" id="gen-dashboard-btn">Generate dashboard →</button>
+            <button id="gen-dashboard-btn" class="btn-primary-sm">Generate dashboard →</button>
+            <button id="quick-mode-btn" class="quick-btn">Quick mode</button>
           </div>
-          <p class="dictate-hint">Tap the microphone on your keyboard to dictate</p>
         </div>
       </div>
 
       <!-- ── Dashboard View ── -->
       <div id="view-dashboard" class="view hidden">
-        <div id="chart-container" class="chart-container hidden">
-          <p class="chart-title">Life Wheel</p>
-          <canvas id="life-wheel-canvas"></canvas>
-        </div>
         <div id="dashboard-content" class="prose-content">
           <div class="empty-state">
             <p>No dashboard yet.</p>
@@ -88,7 +81,6 @@
             ></textarea>
             <button id="midday-send-btn" class="send-btn" title="Send">↑</button>
           </div>
-          <p class="dictate-hint">Tap the microphone on your keyboard to dictate</p>
         </div>
       </div>
 
@@ -110,7 +102,6 @@
           <div class="quick-actions">
             <button class="quick-btn" id="complete-day-btn">Complete day & save summary</button>
           </div>
-          <p class="dictate-hint">Tap the microphone on your keyboard to dictate</p>
         </div>
       </div>
 
@@ -145,7 +136,6 @@
             ></textarea>
             <button id="reflect-send-btn" class="send-btn" title="Send">↑</button>
           </div>
-          <p class="dictate-hint">Tap the microphone on your keyboard to dictate</p>
         </div>
       </div>
 
@@ -165,6 +155,12 @@
             <input id="account-label" type="text" placeholder="Label (e.g. personal, work)" />
             <button id="connect-google-btn" class="btn-secondary">Connect Google account</button>
           </div>
+        </section>
+
+        <section>
+          <h3>Oura Ring</h3>
+          <div id="oura-status" class="agent-status">Checking…</div>
+          <div class="connect-row" id="oura-connect-row" style="margin-top:8px"></div>
         </section>
 
         <section>
@@ -204,21 +200,6 @@
       </div>
     </div>
 
-    <!-- Life Wheel Scoring Modal -->
-    <div id="score-modal" class="modal hidden">
-      <div class="modal-inner">
-        <div class="modal-header">
-          <h2>Life Wheel Scores</h2>
-          <button id="score-modal-close" class="icon-btn">✕</button>
-        </div>
-        <p class="muted" style="font-size:14px;margin-bottom:16px">Rate each area 1–10 based on how it feels right now.</p>
-        <div id="score-sliders"></div>
-        <div class="modal-footer">
-          <button id="score-submit-btn" class="btn-primary">Save scores</button>
-        </div>
-      </div>
-    </div>
-    <div id="score-modal-overlay" class="overlay hidden"></div>
     <div id="settings-overlay" class="overlay hidden"></div>
 
     <!-- Loading overlay -->
@@ -227,7 +208,6 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

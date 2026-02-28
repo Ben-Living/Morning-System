@@ -1,4 +1,4 @@
-/* ── Morning System — Browser App ────────────────────────────────────────── */
+/* ── Daily Orientation — Browser App ─────────────────────────────────────── */
 
 // Simple markdown renderer (no external dependency)
 function renderMarkdown(text) {
@@ -45,7 +45,8 @@ const state = {
   isStreaming: false,
   dashboardGenerated: false,
   eveningStarted: false,
-  currentScorePhase: 'morning',
+  checkinStartTime: null,
+  timerNudgeShown: false,
   // Midday & Reflect use ephemeral in-memory history
   middayHistory: [],
   reflectHistory: [],
@@ -63,8 +64,9 @@ const els = {
   sendBtn: $('send-btn'),
   genDashBtn: $('gen-dashboard-btn'),
   genDashBtn2: $('gen-dashboard-btn-2'),
+  quickModeBtn: $('quick-mode-btn'),
   checkinStatus: $('checkin-status'),
-  scoreMorningBtn: $('score-morning-btn'),
+  checkinInputArea: $('checkin-input-area'),
   // Dashboard
   dashContent: $('dashboard-content'),
   // Midday
@@ -95,16 +97,12 @@ const els = {
   connectGoogleBtn: $('connect-google-btn'),
   accountLabel: $('account-label'),
   agentStatus: $('agent-status'),
+  ouraStatus: $('oura-status'),
+  ouraConnectRow: $('oura-connect-row'),
   trackedItemsList: $('tracked-items-list'),
   newTrackedItem: $('new-tracked-item'),
   addTrackedBtn: $('add-tracked-btn'),
   loading: $('loading'),
-  // Scoring
-  scoreModal: $('score-modal'),
-  scoreModalOverlay: $('score-modal-overlay'),
-  scoreModalClose: $('score-modal-close'),
-  scoreSliders: $('score-sliders'),
-  scoreSubmitBtn: $('score-submit-btn'),
   // Aims
   aimDisplay: $('aim-display'),
   aimForm: $('aim-form'),
@@ -117,6 +115,21 @@ const els = {
   aimCancelBtn: $('aim-cancel-btn'),
   aimNewBtn: $('aim-new-btn'),
 };
+
+// ── Life wheel categories (mirror server-side) ─────────────────────────────
+
+const LIFE_WHEEL_CATEGORIES = [
+  'Health and Well-being',
+  'Career or Work',
+  'Finances',
+  'Relationships',
+  'Personal Growth',
+  'Fun and Recreation',
+  'Physical Environment',
+  'Spirituality or Faith',
+  'Contribution and Service',
+  'Love and Intimacy',
+];
 
 // ── API helpers ────────────────────────────────────────────────────────────
 
@@ -147,7 +160,9 @@ async function loadSession() {
     state.sessionDate = session.date;
     state.sessionStatus = session.status;
 
-    const d = new Date(session.date);
+    // Format and display the date (use UTC to avoid timezone display issues)
+    const [year, month, day] = session.date.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
     els.headerDate.textContent = d.toLocaleDateString('en-NZ', {
       weekday: 'short',
       day: 'numeric',
@@ -164,13 +179,21 @@ async function loadSession() {
       renderDashboard(session.dashboard);
     }
 
-    if (messages.length === 0) {
-      await openCheckin();
+    // If session is past check-in phase, show done state on check-in tab
+    if (['dashboard', 'evening_review', 'complete'].includes(session.status)) {
+      renderCheckinDoneState();
+    } else if (messages.length === 0) {
+      // Fresh session — show gate
+      showCheckinGate();
     }
 
     const params = new URLSearchParams(window.location.search);
     if (params.has('connected')) {
       showStatus(`Connected ${decodeURIComponent(params.get('connected'))}`, false);
+      window.history.replaceState({}, '', '/');
+    }
+    if (params.has('oura_connected')) {
+      showStatus('Oura Ring connected.', false);
       window.history.replaceState({}, '', '/');
     }
     if (params.has('error')) {
@@ -187,13 +210,109 @@ async function loadSession() {
   }
 }
 
+// ── Check-in gate ──────────────────────────────────────────────────────────
+
+function showCheckinGate() {
+  const gateEl = document.createElement('div');
+  gateEl.id = 'checkin-gate';
+  gateEl.className = 'checkin-gate';
+  gateEl.innerHTML = `
+    <p class="gate-question">Ready to begin?</p>
+    <div class="gate-actions">
+      <button class="btn-primary" id="gate-yes-btn">Yes</button>
+      <button class="btn-secondary" id="gate-not-yet-btn">Not yet</button>
+    </div>
+  `;
+  els.messages.appendChild(gateEl);
+
+  $('gate-yes-btn').addEventListener('click', () => {
+    gateEl.remove();
+    showPulseCheck();
+  });
+
+  $('gate-not-yet-btn').addEventListener('click', () => {
+    // Leave the gate in place — nothing to do
+  });
+}
+
+// ── Morning pulse check ────────────────────────────────────────────────────
+
+function showPulseCheck() {
+  const pulseEl = document.createElement('div');
+  pulseEl.id = 'pulse-check';
+  pulseEl.className = 'pulse-check';
+
+  const slidersHtml = LIFE_WHEEL_CATEGORIES.map((cat) => `
+    <div class="pulse-row">
+      <label class="pulse-label">${escapeHtml(cat)}</label>
+      <div class="pulse-input-group">
+        <input type="range" min="1" max="10" value="5" class="score-range" data-category="${escapeHtml(cat)}" />
+        <span class="score-value">5</span>
+      </div>
+    </div>
+  `).join('');
+
+  pulseEl.innerHTML = `
+    <p class="pulse-intro">How are these areas feeling right now?</p>
+    <div class="pulse-sliders">${slidersHtml}</div>
+    <div class="pulse-actions">
+      <button class="btn-primary" id="pulse-save-btn">Save &amp; begin</button>
+      <button class="btn-secondary" id="pulse-skip-btn">Skip</button>
+    </div>
+  `;
+
+  els.messages.appendChild(pulseEl);
+  scrollToBottom(els.messages);
+
+  // Wire slider value displays
+  pulseEl.querySelectorAll('.score-range').forEach((input) => {
+    const valEl = input.parentElement.querySelector('.score-value');
+    input.addEventListener('input', () => {
+      valEl.textContent = input.value;
+    });
+  });
+
+  $('pulse-save-btn').addEventListener('click', async () => {
+    const scores = {};
+    pulseEl.querySelectorAll('.score-range').forEach((input) => {
+      scores[input.dataset.category] = parseInt(input.value, 10);
+    });
+    try {
+      await post('/api/scores', {
+        sessionId: state.sessionId,
+        phase: 'morning',
+        scores,
+      });
+    } catch (err) {
+      console.error('Pulse save error:', err);
+    }
+    pulseEl.remove();
+    await openCheckin();
+  });
+
+  $('pulse-skip-btn').addEventListener('click', async () => {
+    pulseEl.remove();
+    await openCheckin();
+  });
+}
+
 async function openCheckin() {
+  state.checkinStartTime = Date.now();
+  state.timerNudgeShown = false;
   appendTypingIndicator('checkin-typing', els.messages);
   try {
     await streamResponse('/api/session/open', { sessionId: state.sessionId }, 'checkin-typing', els.messages);
   } catch (err) {
     removeTypingIndicator('checkin-typing');
     console.error('Open check-in error:', err);
+  }
+}
+
+// ── Done state ─────────────────────────────────────────────────────────────
+
+function renderCheckinDoneState() {
+  if (els.checkinInputArea) {
+    els.checkinInputArea.style.display = 'none';
   }
 }
 
@@ -365,6 +484,15 @@ async function sendCheckinMessage() {
       'checkin-typing',
       els.messages
     );
+
+    // Session timer nudge — after 5 minutes of check-in
+    if (state.checkinStartTime && !state.timerNudgeShown) {
+      const elapsed = Date.now() - state.checkinStartTime;
+      if (elapsed > 5 * 60 * 1000) {
+        state.timerNudgeShown = true;
+        appendMessageToContainer('assistant', "You've covered good ground. Ready to generate your dashboard?", els.messages);
+      }
+    }
   } catch (err) {
     removeTypingIndicator('checkin-typing');
     appendMessageToContainer('assistant', 'Sorry, something went wrong. Please try again.', els.messages);
@@ -397,7 +525,6 @@ async function sendMiddayMessage() {
       'midday-typing',
       els.middayMessages
     );
-    // Update ephemeral history
     state.middayHistory.push({ role: 'user', content: text });
     state.middayHistory.push({ role: 'assistant', content: fullResponse });
   } catch (err) {
@@ -459,6 +586,10 @@ async function generateDashboard() {
     renderDashboard(dashboard);
     state.dashboardGenerated = true;
     state.sessionStatus = 'dashboard';
+
+    // Show done state on check-in tab
+    appendMessageToContainer('assistant', 'Go well.', els.messages);
+    renderCheckinDoneState();
   } catch (err) {
     els.dashContent.innerHTML = `<div class="empty-state"><p>Failed to generate dashboard.</p><p class="muted">${err.message}</p></div>`;
     console.error('Dashboard error:', err);
@@ -466,41 +597,52 @@ async function generateDashboard() {
 }
 
 function renderDashboard(markdown) {
-  const fullHtml = renderMarkdown(markdown);
+  // Split markdown into sections by ## headings, keyed by heading text
+  const sectionMap = {};
+  const rawSections = ('\n' + markdown).split(/\n(?=## )/);
 
-  // Split at the 5th <h2> — everything from there is collapsed
-  let h2Count = 0;
-  let searchIdx = 0;
-  while (h2Count < 4) {
-    const idx = fullHtml.indexOf('<h2>', searchIdx);
-    if (idx === -1) break;
-    h2Count++;
-    searchIdx = idx + 4;
-  }
+  rawSections.forEach((raw) => {
+    const firstLine = raw.split('\n')[0];
+    const nameMatch = firstLine.match(/^## (.+)$/);
+    if (!nameMatch) return;
+    const name = nameMatch[1].trim();
+    sectionMap[name] = renderMarkdown(raw.trim());
+  });
 
-  const splitIdx = fullHtml.indexOf('<h2>', searchIdx);
+  const TIER1 = ['One Degree', "Today's Three"];
+  const WHAT_ELSE_HIDDEN = ['Broader Triage'];
+  const TIER2 = ['Body & Biometrics', 'Comms & Calendar'];
+  const SHOW_MORE_HIDDEN = [
+    'Neurobiological Insight', "Today's Awareness", 'Aim & Practice',
+    'Growth Edge', 'Patterns Worth Noticing', 'Relationships', 'Evening Intention',
+  ];
 
-  if (splitIdx === -1) {
-    // Fewer than 5 sections — show everything
-    els.dashContent.innerHTML = fullHtml;
-    return;
-  }
-
-  const visible = fullHtml.slice(0, splitIdx);
-  const collapsed = fullHtml.slice(splitIdx);
+  const get = (name) => sectionMap[name] || '';
 
   els.dashContent.innerHTML =
-    visible +
-    `<div class="dash-toggle-row"><button class="dash-toggle-btn" id="dash-toggle-btn" onclick="toggleDashMore()">Show more</button></div>` +
-    `<div id="dash-more" class="hidden">${collapsed}</div>`;
+    TIER1.map(get).join('') +
+    `<div class="dash-toggle-row"><button class="dash-toggle-btn" id="what-else-btn" onclick="toggleWhatElse()">What else?</button></div>` +
+    `<div id="what-else-content" class="hidden">${WHAT_ELSE_HIDDEN.map(get).join('')}</div>` +
+    TIER2.map(get).join('') +
+    `<div class="dash-toggle-row"><button class="dash-toggle-btn" id="show-more-btn" onclick="toggleShowMore()">Show more</button></div>` +
+    `<div id="show-more-content" class="hidden">${SHOW_MORE_HIDDEN.map(get).join('')}</div>`;
 }
 
-window.toggleDashMore = function () {
-  const more = document.getElementById('dash-more');
-  const btn = document.getElementById('dash-toggle-btn');
-  if (!more || !btn) return;
-  const isHidden = more.classList.contains('hidden');
-  more.classList.toggle('hidden', !isHidden);
+window.toggleWhatElse = function () {
+  const content = $('what-else-content');
+  const btn = $('what-else-btn');
+  if (!content || !btn) return;
+  const isHidden = content.classList.contains('hidden');
+  content.classList.toggle('hidden', !isHidden);
+  btn.textContent = isHidden ? 'Less' : 'What else?';
+};
+
+window.toggleShowMore = function () {
+  const content = $('show-more-content');
+  const btn = $('show-more-btn');
+  if (!content || !btn) return;
+  const isHidden = content.classList.contains('hidden');
+  content.classList.toggle('hidden', !isHidden);
   btn.textContent = isHidden ? 'Show less' : 'Show more';
 };
 
@@ -629,131 +771,15 @@ function switchView(view) {
     target.classList.add('active');
   }
 
+  // Evening warmth — apply to both evening and reflect views
+  document.body.classList.toggle('evening-mode', view === 'evening' || view === 'reflect');
+
   if (view === 'evening' && !state.eveningStarted) {
     startEveningReview();
   }
 
-  if (view === 'dashboard') {
-    fetchAndRenderChart();
-  }
-
   if (view === 'reflect') {
     loadOrientation();
-  }
-}
-
-// ── Life Wheel Radar Chart ──────────────────────────────────────────────────
-
-let lifeWheelChart = null;
-
-const CHART_LABELS = [
-  'Health', 'Career', 'Finances', 'Relations',
-  'Growth', 'Fun/Rec', 'Environment', 'Spirit',
-  'Contribution', 'Intimacy',
-];
-
-const CHART_FULL_CATEGORIES = [
-  'Health and Well-being', 'Career or Work', 'Finances', 'Relationships',
-  'Personal Growth', 'Fun and Recreation', 'Physical Environment',
-  'Spirituality or Faith', 'Contribution and Service', 'Love and Intimacy',
-];
-
-const CHART_COLORS = [
-  { line: '#8B7355', fill: 'rgba(139,115,85,0.15)' },
-  { line: '#A89070', fill: 'rgba(168,144,112,0.10)' },
-  { line: '#C4AE8A', fill: 'rgba(196,174,138,0.08)' },
-];
-
-async function fetchAndRenderChart() {
-  const canvas = document.getElementById('life-wheel-canvas');
-  const container = document.getElementById('chart-container');
-  if (!canvas || !container) return;
-
-  try {
-    const { scores } = await get('/api/scores?days=14');
-    if (!scores || scores.length === 0) {
-      container.classList.add('hidden');
-      return;
-    }
-
-    const dateMap = new Map();
-    scores.forEach((entry) => {
-      if (!dateMap.has(entry.date)) dateMap.set(entry.date, {});
-      if (!dateMap.get(entry.date).morning || entry.phase === 'morning') {
-        dateMap.get(entry.date)[entry.phase] = entry;
-      }
-    });
-
-    const sortedDates = [...dateMap.keys()].sort().reverse().slice(0, 3);
-    if (sortedDates.length === 0) {
-      container.classList.add('hidden');
-      return;
-    }
-
-    container.classList.remove('hidden');
-
-    const today = new Date().toISOString().slice(0, 10);
-    const datasets = sortedDates.map((date, idx) => {
-      const dayData = dateMap.get(date);
-      const entry = dayData.morning || dayData.evening || Object.values(dayData)[0];
-      const data = CHART_FULL_CATEGORIES.map((cat) => entry.scores[cat] ?? 0);
-      const label = date === today ? 'Today' : date === sortedDates[1] && idx === 1 ? 'Yesterday' : date;
-
-      return {
-        label,
-        data,
-        borderColor: CHART_COLORS[idx].line,
-        backgroundColor: CHART_COLORS[idx].fill,
-        pointBackgroundColor: CHART_COLORS[idx].line,
-        pointRadius: 3,
-        borderWidth: idx === 0 ? 2 : 1.5,
-      };
-    });
-
-    if (lifeWheelChart) {
-      lifeWheelChart.destroy();
-      lifeWheelChart = null;
-    }
-
-    lifeWheelChart = new Chart(canvas, {
-      type: 'radar',
-      data: { labels: CHART_LABELS, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        scales: {
-          r: {
-            min: 0,
-            max: 10,
-            ticks: {
-              stepSize: 2,
-              font: { size: 10, family: "'IBM Plex Mono', monospace" },
-              backdropColor: 'transparent',
-              color: '#AEA89E',
-            },
-            pointLabels: {
-              font: { size: 11, family: "'IBM Plex Mono', monospace" },
-              color: '#7A7167',
-            },
-            grid: { color: 'rgba(0,0,0,0.06)' },
-            angleLines: { color: 'rgba(0,0,0,0.06)' },
-          },
-        },
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              font: { size: 11, family: "'IBM Plex Mono', monospace" },
-              padding: 12,
-              boxWidth: 10,
-              color: '#7A7167',
-            },
-          },
-        },
-      },
-    });
-  } catch (err) {
-    console.error('Chart render error:', err);
   }
 }
 
@@ -762,7 +788,7 @@ async function fetchAndRenderChart() {
 async function openSettings() {
   els.settingsPanel.classList.remove('hidden');
   els.settingsOverlay.classList.remove('hidden');
-  await Promise.all([loadAccounts(), loadAgentStatus(), loadTrackedItems(), loadCurrentAim()]);
+  await Promise.all([loadAccounts(), loadOuraStatus(), loadAgentStatus(), loadTrackedItems(), loadCurrentAim()]);
 }
 
 function closeSettings() {
@@ -795,6 +821,33 @@ window.disconnectAccount = async function (email) {
   if (!confirm(`Remove ${email}?`)) return;
   await del(`/api/accounts/${encodeURIComponent(email)}`);
   await loadAccounts();
+};
+
+async function loadOuraStatus() {
+  try {
+    const { connected } = await get('/api/oura/status');
+    if (connected) {
+      els.ouraStatus.className = 'agent-status ok';
+      els.ouraStatus.textContent = 'Connected — biometrics available';
+      els.ouraConnectRow.innerHTML = `<button class="btn-danger" onclick="disconnectOura()">Disconnect Oura</button>`;
+    } else {
+      els.ouraStatus.className = 'agent-status missing';
+      els.ouraStatus.textContent = 'Not connected';
+      els.ouraConnectRow.innerHTML = `<button class="btn-secondary" onclick="connectOura()">Connect Oura Ring</button>`;
+    }
+  } catch {
+    els.ouraStatus.textContent = 'Could not check Oura status';
+  }
+}
+
+window.connectOura = function () {
+  window.location.href = '/auth/oura';
+};
+
+window.disconnectOura = async function () {
+  if (!confirm('Disconnect Oura Ring?')) return;
+  await del('/api/oura');
+  await loadOuraStatus();
 };
 
 async function loadAgentStatus() {
@@ -870,71 +923,6 @@ function autoResizeTextarea(el) {
 
 function showLoading(show) {
   els.loading.classList.toggle('hidden', !show);
-}
-
-// ── Life Wheel Scoring ─────────────────────────────────────────────────────
-
-const LIFE_WHEEL_CATEGORIES = [
-  'Health and Well-being',
-  'Career or Work',
-  'Finances',
-  'Relationships',
-  'Personal Growth',
-  'Fun and Recreation',
-  'Physical Environment',
-  'Spirituality or Faith',
-  'Contribution and Service',
-  'Love and Intimacy',
-];
-
-function openScoreModal(phase) {
-  state.currentScorePhase = phase;
-  els.scoreSliders.innerHTML = LIFE_WHEEL_CATEGORIES.map((cat) => `
-    <div class="score-row">
-      <label class="score-label">${escapeHtml(cat)}</label>
-      <div class="score-input-group">
-        <input type="range" min="1" max="10" value="5" class="score-range" data-category="${escapeHtml(cat)}" id="score-${cat.replace(/\s+/g, '-')}" />
-        <span class="score-value" id="val-${cat.replace(/\s+/g, '-')}">5</span>
-      </div>
-    </div>
-  `).join('');
-
-  document.querySelectorAll('.score-range').forEach((input) => {
-    const valId = 'val-' + input.dataset.category.replace(/\s+/g, '-');
-    input.addEventListener('input', () => {
-      document.getElementById(valId).textContent = input.value;
-    });
-  });
-
-  els.scoreModal.classList.remove('hidden');
-  els.scoreModalOverlay.classList.remove('hidden');
-}
-
-function closeScoreModal() {
-  els.scoreModal.classList.add('hidden');
-  els.scoreModalOverlay.classList.add('hidden');
-}
-
-async function submitScores() {
-  const scores = {};
-  document.querySelectorAll('.score-range').forEach((input) => {
-    scores[input.dataset.category] = parseInt(input.value, 10);
-  });
-
-  try {
-    await post('/api/scores', {
-      sessionId: state.sessionId,
-      phase: state.currentScorePhase,
-      scores,
-    });
-    closeScoreModal();
-    showStatus('Scores saved.', false);
-    if (state.currentView === 'dashboard') {
-      fetchAndRenderChart();
-    }
-  } catch (err) {
-    alert('Error saving scores: ' + err.message);
-  }
 }
 
 // ── Aims ───────────────────────────────────────────────────────────────────
@@ -1043,22 +1031,12 @@ els.chatInput.addEventListener('keydown', (e) => {
 });
 els.chatInput.addEventListener('input', () => autoResizeTextarea(els.chatInput));
 
-// Quick actions
-document.querySelectorAll('.quick-btn[data-msg]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    els.chatInput.value = btn.dataset.msg;
-    sendCheckinMessage();
-  });
-});
-
+// Generate dashboard buttons
 els.genDashBtn.addEventListener('click', generateDashboard);
 els.genDashBtn2.addEventListener('click', generateDashboard);
 
-// Scoring
-els.scoreMorningBtn.addEventListener('click', () => openScoreModal('morning'));
-els.scoreModalClose.addEventListener('click', closeScoreModal);
-els.scoreModalOverlay.addEventListener('click', closeScoreModal);
-els.scoreSubmitBtn.addEventListener('click', submitScores);
+// Quick mode — directly generates dashboard without requiring a check-in message
+els.quickModeBtn.addEventListener('click', generateDashboard);
 
 // Midday
 els.middaySendBtn.addEventListener('click', sendMiddayMessage);
