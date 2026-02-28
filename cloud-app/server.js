@@ -182,12 +182,13 @@ app.delete('/api/oura', async (req, res) => {
 
 app.get('/api/session/today', async (req, res) => {
   const dateStr = getNZDateStr();
+  const nzNow = DateTime.now().setZone(NZ_TZ);
   let session = await db.getTodaySession(dateStr);
   if (!session) {
     session = await db.createSession(dateStr);
   }
   const messages = await db.getSessionMessages(session.id);
-  res.json({ session, messages });
+  res.json({ session, messages, nzHour: nzNow.hour, nzMinute: nzNow.minute });
 });
 
 app.get('/api/session/:date', async (req, res) => {

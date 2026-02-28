@@ -41,13 +41,16 @@ const state = {
   sessionId: null,
   sessionDate: null,
   sessionStatus: null,
-  currentView: 'checkin',
+  primaryView: 'checkin',     // 'checkin' | 'dashboard'
+  secondaryOpen: false,
+  currentSecondary: 'evening', // 'evening' | 'midday' | 'reflect'
+  nzHour: 0,
+  nzMinute: 0,
   isStreaming: false,
   dashboardGenerated: false,
   eveningStarted: false,
   checkinStartTime: null,
   timerNudgeShown: false,
-  // Midday & Reflect use ephemeral in-memory history
   middayHistory: [],
   reflectHistory: [],
 };
@@ -58,26 +61,36 @@ const $ = (id) => document.getElementById(id);
 
 const els = {
   headerDate: $('header-date'),
+  checkinStatus: $('checkin-status'),
+  // Primary views
+  primaryCheckin: $('primary-checkin'),
+  primaryDashboard: $('primary-dashboard'),
   // Check-in
   messages: $('messages'),
   chatInput: $('chat-input'),
   sendBtn: $('send-btn'),
   genDashBtn: $('gen-dashboard-btn'),
-  genDashBtn2: $('gen-dashboard-btn-2'),
   quickModeBtn: $('quick-mode-btn'),
-  checkinStatus: $('checkin-status'),
   checkinInputArea: $('checkin-input-area'),
   // Dashboard
   dashContent: $('dashboard-content'),
-  // Midday
-  middayMessages: $('midday-messages'),
-  middayInput: $('midday-input'),
-  middaySendBtn: $('midday-send-btn'),
+  eveningPrompt: $('evening-prompt'),
+  eveningPromptBtn: $('evening-prompt-btn'),
+  // More bar
+  moreBtn: $('more-btn'),
+  // Secondary panel
+  secondaryPanel: $('secondary-panel'),
+  secondaryOverlay: $('secondary-overlay'),
+  closeSecondaryBtn: $('close-secondary-btn'),
   // Evening
   eveningMessages: $('evening-messages'),
   eveningInput: $('evening-input'),
   eveningSendBtn: $('evening-send-btn'),
   completeDayBtn: $('complete-day-btn'),
+  // Midday
+  middayMessages: $('midday-messages'),
+  middayInput: $('midday-input'),
+  middaySendBtn: $('midday-send-btn'),
   // Reflect
   reflectMessages: $('reflect-messages'),
   reflectInput: $('reflect-input'),
@@ -103,20 +116,9 @@ const els = {
   newTrackedItem: $('new-tracked-item'),
   addTrackedBtn: $('add-tracked-btn'),
   loading: $('loading'),
-  // Aims
-  aimDisplay: $('aim-display'),
-  aimForm: $('aim-form'),
-  aimHeartWish: $('aim-heart-wish'),
-  aimStatement: $('aim-statement'),
-  aimStartDate: $('aim-start-date'),
-  aimEndDate: $('aim-end-date'),
-  aimAccountability: $('aim-accountability'),
-  aimSaveBtn: $('aim-save-btn'),
-  aimCancelBtn: $('aim-cancel-btn'),
-  aimNewBtn: $('aim-new-btn'),
 };
 
-// ── Life wheel categories (mirror server-side) ─────────────────────────────
+// ── Life wheel categories ──────────────────────────────────────────────────
 
 const LIFE_WHEEL_CATEGORIES = [
   'Health and Well-being',
@@ -155,12 +157,14 @@ function patch(path, body) { return api('PATCH', path, body); }
 async function loadSession() {
   showLoading(true);
   try {
-    const { session, messages } = await get('/api/session/today');
+    const { session, messages, nzHour, nzMinute } = await get('/api/session/today');
     state.sessionId = session.id;
     state.sessionDate = session.date;
     state.sessionStatus = session.status;
+    state.nzHour = nzHour || 0;
+    state.nzMinute = nzMinute || 0;
 
-    // Format and display the date (use UTC to avoid timezone display issues)
+    // Format and display the date
     const [year, month, day] = session.date.split('-').map(Number);
     const d = new Date(year, month - 1, day);
     els.headerDate.textContent = d.toLocaleDateString('en-NZ', {
@@ -179,13 +183,8 @@ async function loadSession() {
       renderDashboard(session.dashboard);
     }
 
-    // If session is past check-in phase, show done state on check-in tab
-    if (['dashboard', 'evening_review', 'complete'].includes(session.status)) {
-      renderCheckinDoneState();
-    } else if (messages.length === 0) {
-      // Fresh session — show gate
-      showCheckinGate();
-    }
+    // Context-aware view
+    applyContextView(session, messages);
 
     const params = new URLSearchParams(window.location.search);
     if (params.has('connected')) {
@@ -210,7 +209,52 @@ async function loadSession() {
   }
 }
 
+// ── Context-aware display ──────────────────────────────────────────────────
+
+function applyContextView(session, messages) {
+  const checkinDone = ['dashboard', 'evening_review', 'complete'].includes(session.status);
+  const isComplete = session.status === 'complete';
+  const after11AM = state.nzHour >= 11;
+  const after330PM = state.nzHour > 15 || (state.nzHour === 15 && state.nzMinute >= 30);
+
+  if (!checkinDone) {
+    showPrimaryView('checkin');
+    if (messages.length === 0) {
+      if (after11AM) {
+        showMissedCheckinPrompt();
+      } else {
+        showCheckinGate();
+      }
+    }
+    // If has messages but no dashboard — check-in is in progress, input area already visible
+  } else {
+    showPrimaryView('dashboard');
+    renderCheckinDoneState();
+    if (!isComplete && after330PM) {
+      showEveningPromptBanner();
+    }
+  }
+}
+
+function showPrimaryView(which) {
+  state.primaryView = which;
+  els.primaryCheckin.classList.toggle('hidden', which !== 'checkin');
+  els.primaryDashboard.classList.toggle('hidden', which !== 'dashboard');
+}
+
+function showEveningPromptBanner() {
+  els.eveningPrompt.classList.remove('hidden');
+}
+
 // ── Check-in gate ──────────────────────────────────────────────────────────
+
+function showMissedCheckinPrompt() {
+  const promptEl = document.createElement('div');
+  promptEl.className = 'missed-checkin-prompt';
+  promptEl.textContent = "I notice we missed the morning check-in. Want to do a quick one?";
+  els.messages.appendChild(promptEl);
+  showCheckinGate();
+}
 
 function showCheckinGate() {
   const gateEl = document.createElement('div');
@@ -228,10 +272,6 @@ function showCheckinGate() {
   $('gate-yes-btn').addEventListener('click', () => {
     gateEl.remove();
     showPulseCheck();
-  });
-
-  $('gate-not-yet-btn').addEventListener('click', () => {
-    // Leave the gate in place — nothing to do
   });
 }
 
@@ -264,7 +304,6 @@ function showPulseCheck() {
   els.messages.appendChild(pulseEl);
   scrollToBottom(els.messages);
 
-  // Wire slider value displays
   pulseEl.querySelectorAll('.score-range').forEach((input) => {
     const valEl = input.parentElement.querySelector('.score-value');
     input.addEventListener('input', () => {
@@ -332,30 +371,8 @@ async function checkSnapshotStatus() {
 // ── Messaging ──────────────────────────────────────────────────────────────
 
 function appendMessage(role, content, animate = true) {
-  const div = document.createElement('div');
-  div.className = `message ${role}`;
-
-  const bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
-
-  if (role === 'assistant') {
-    bubble.innerHTML = renderMarkdown(content);
-  } else {
-    bubble.textContent = content;
-  }
-
-  div.appendChild(bubble);
-
-  // Route to appropriate container
-  let container;
-  if (state.currentView === 'evening') container = els.eveningMessages;
-  else if (state.currentView === 'midday') container = els.middayMessages;
-  else if (state.currentView === 'reflect') container = els.reflectMessages;
-  else container = els.messages;
-
-  container.appendChild(div);
-  scrollToBottom(container);
-  return div;
+  // Always routes to check-in messages (used by loadSession for check-in history)
+  return appendMessageToContainer(role, content, els.messages);
 }
 
 function appendMessageToContainer(role, content, container) {
@@ -485,7 +502,7 @@ async function sendCheckinMessage() {
       els.messages
     );
 
-    // Session timer nudge — after 5 minutes of check-in
+    // Timer nudge — after 5 minutes of check-in
     if (state.checkinStartTime && !state.timerNudgeShown) {
       const elapsed = Date.now() - state.checkinStartTime;
       if (elapsed > 5 * 60 * 1000) {
@@ -574,12 +591,12 @@ async function sendReflectMessage() {
 
 async function generateDashboard() {
   if (state.dashboardGenerated) {
-    switchView('dashboard');
+    showPrimaryView('dashboard');
     return;
   }
 
   els.dashContent.innerHTML = '<div class="dashboard-loading"><div class="spinner"></div><p>Generating your dashboard…</p></div>';
-  switchView('dashboard');
+  showPrimaryView('dashboard');
 
   try {
     const { dashboard } = await post('/api/dashboard/generate', { sessionId: state.sessionId });
@@ -587,9 +604,14 @@ async function generateDashboard() {
     state.dashboardGenerated = true;
     state.sessionStatus = 'dashboard';
 
-    // Show done state on check-in tab
     appendMessageToContainer('assistant', 'Go well.', els.messages);
     renderCheckinDoneState();
+
+    // Show evening prompt if it's after 3:30PM
+    const after330PM = state.nzHour > 15 || (state.nzHour === 15 && state.nzMinute >= 30);
+    if (after330PM && state.sessionStatus !== 'complete') {
+      showEveningPromptBanner();
+    }
   } catch (err) {
     els.dashContent.innerHTML = `<div class="empty-state"><p>Failed to generate dashboard.</p><p class="muted">${err.message}</p></div>`;
     console.error('Dashboard error:', err);
@@ -597,53 +619,60 @@ async function generateDashboard() {
 }
 
 function renderDashboard(markdown) {
-  // Split markdown into sections by ## headings, keyed by heading text
+  // Parse sections by ## headings, storing both full (with h2) and body (without h2)
   const sectionMap = {};
   const rawSections = ('\n' + markdown).split(/\n(?=## )/);
 
   rawSections.forEach((raw) => {
-    const firstLine = raw.split('\n')[0];
-    const nameMatch = firstLine.match(/^## (.+)$/);
+    const lines = raw.split('\n');
+    const nameMatch = lines[0].match(/^## (.+)$/);
     if (!nameMatch) return;
     const name = nameMatch[1].trim();
-    sectionMap[name] = renderMarkdown(raw.trim());
+    const bodyRaw = lines.slice(1).join('\n').trim();
+    sectionMap[name] = {
+      full: renderMarkdown(raw.trim()),
+      body: renderMarkdown(bodyRaw),
+    };
   });
 
-  const TIER1 = ['One Degree', "Today's Three"];
-  const WHAT_ELSE_HIDDEN = ['Broader Triage'];
-  const TIER2 = ['Body & Biometrics', 'Comms & Calendar'];
-  const SHOW_MORE_HIDDEN = [
-    'Neurobiological Insight', "Today's Awareness", 'Aim & Practice',
-    'Growth Edge', 'Patterns Worth Noticing', 'Relationships', 'Evening Intention',
+  // 4 primary sections — shown without h2 headers
+  const PRIMARY = ["One Degree", "Today's Three", "Today's Awareness", "Aim & Practice"];
+  // Everything else behind "More"
+  const MORE = [
+    'Broader Triage', 'Body & Biometrics', 'Comms & Calendar',
+    'Neurobiological Insight', 'Growth Edge', 'Patterns Worth Noticing',
+    'Relationships', 'Evening Intention',
   ];
 
-  const get = (name) => sectionMap[name] || '';
+  const primaryHtml = PRIMARY
+    .map((name) => {
+      const sec = sectionMap[name];
+      if (!sec) return '';
+      return `<div class="dash-primary-section">${sec.body}</div>`;
+    })
+    .join('');
+
+  const moreHtml = MORE
+    .map((name) => {
+      const sec = sectionMap[name];
+      if (!sec) return '';
+      return `<div class="dash-more-section">${sec.full}</div>`;
+    })
+    .join('');
 
   els.dashContent.innerHTML =
-    TIER1.map(get).join('') +
-    `<div class="dash-toggle-row"><button class="dash-toggle-btn" id="what-else-btn" onclick="toggleWhatElse()">What else?</button></div>` +
-    `<div id="what-else-content" class="hidden">${WHAT_ELSE_HIDDEN.map(get).join('')}</div>` +
-    TIER2.map(get).join('') +
-    `<div class="dash-toggle-row"><button class="dash-toggle-btn" id="show-more-btn" onclick="toggleShowMore()">Show more</button></div>` +
-    `<div id="show-more-content" class="hidden">${SHOW_MORE_HIDDEN.map(get).join('')}</div>`;
+    primaryHtml +
+    `<div class="dash-toggle-row"><button class="dash-toggle-btn" id="more-sections-btn" onclick="toggleMoreSections()">More</button></div>` +
+    `<div id="more-sections-content" class="hidden">${moreHtml}</div>`;
 }
 
-window.toggleWhatElse = function () {
-  const content = $('what-else-content');
-  const btn = $('what-else-btn');
+window.toggleMoreSections = function () {
+  const content = $('more-sections-content');
+  const btn = $('more-sections-btn');
   if (!content || !btn) return;
   const isHidden = content.classList.contains('hidden');
   content.classList.toggle('hidden', !isHidden);
-  btn.textContent = isHidden ? 'Less' : 'What else?';
-};
-
-window.toggleShowMore = function () {
-  const content = $('show-more-content');
-  const btn = $('show-more-btn');
-  if (!content || !btn) return;
-  const isHidden = content.classList.contains('hidden');
-  content.classList.toggle('hidden', !isHidden);
-  btn.textContent = isHidden ? 'Show less' : 'Show more';
+  btn.textContent = isHidden ? 'Less' : 'More';
 };
 
 // ── Evening Review ─────────────────────────────────────────────────────────
@@ -708,6 +737,8 @@ async function completeDay() {
     els.completeDayBtn.disabled = true;
     els.completeDayBtn.textContent = 'Day completed ✓';
     state.sessionStatus = 'complete';
+    // Hide evening prompt banner
+    els.eveningPrompt.classList.add('hidden');
   } catch (err) {
     alert('Error completing day: ' + err.message);
   } finally {
@@ -751,34 +782,58 @@ async function saveOrientation() {
   }
 }
 
-// ── View Switching ─────────────────────────────────────────────────────────
+// ── Secondary Panel ────────────────────────────────────────────────────────
 
-function switchView(view) {
-  state.currentView = view;
+function openSecondary(sec) {
+  sec = sec || state.currentSecondary;
+  state.currentSecondary = sec;
+  state.secondaryOpen = true;
 
-  document.querySelectorAll('.tab').forEach((t) => {
-    t.classList.toggle('active', t.dataset.view === view);
-  });
+  els.secondaryPanel.classList.remove('hidden');
+  els.secondaryOverlay.classList.remove('hidden');
 
-  document.querySelectorAll('.view').forEach((v) => {
-    v.classList.remove('active');
-    v.classList.add('hidden');
-  });
+  // Switch to the correct tab content
+  switchSecondaryTab(sec);
 
-  const target = document.getElementById(`view-${view}`);
-  if (target) {
-    target.classList.remove('hidden');
-    target.classList.add('active');
-  }
+  // Evening warmth for evening and reflect
+  document.body.classList.toggle('evening-mode', sec === 'evening' || sec === 'reflect');
 
-  // Evening warmth — apply to both evening and reflect views
-  document.body.classList.toggle('evening-mode', view === 'evening' || view === 'reflect');
-
-  if (view === 'evening' && !state.eveningStarted) {
+  if (sec === 'evening' && !state.eveningStarted) {
     startEveningReview();
   }
+  if (sec === 'reflect') {
+    loadOrientation();
+  }
+}
 
-  if (view === 'reflect') {
+function closeSecondary() {
+  state.secondaryOpen = false;
+  els.secondaryPanel.classList.add('hidden');
+  els.secondaryOverlay.classList.add('hidden');
+  document.body.classList.remove('evening-mode');
+}
+
+function switchSecondaryTab(sec) {
+  state.currentSecondary = sec;
+
+  // Update tab buttons
+  document.querySelectorAll('.secondary-tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.sec === sec);
+  });
+
+  // Show/hide content
+  ['sec-evening', 'sec-midday', 'sec-reflect'].forEach((id) => {
+    const el = $(id);
+    if (el) el.classList.toggle('hidden', id !== `sec-${sec}`);
+  });
+
+  // Evening warmth
+  document.body.classList.toggle('evening-mode', sec === 'evening' || sec === 'reflect');
+
+  if (sec === 'evening' && !state.eveningStarted) {
+    startEveningReview();
+  }
+  if (sec === 'reflect') {
     loadOrientation();
   }
 }
@@ -788,7 +843,7 @@ function switchView(view) {
 async function openSettings() {
   els.settingsPanel.classList.remove('hidden');
   els.settingsOverlay.classList.remove('hidden');
-  await Promise.all([loadAccounts(), loadOuraStatus(), loadAgentStatus(), loadTrackedItems(), loadCurrentAim()]);
+  await Promise.all([loadAccounts(), loadOuraStatus(), loadAgentStatus(), loadTrackedItems()]);
 }
 
 function closeSettings() {
@@ -897,6 +952,8 @@ window.resolveItem = async function (id) {
   if (el) el.remove();
 };
 
+// ── Utility ────────────────────────────────────────────────────────────────
+
 function escapeHtml(str) {
   return str
     .replace(/&/g, '&amp;')
@@ -904,122 +961,22 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;');
 }
 
-// ── Status bar ─────────────────────────────────────────────────────────────
-
 function showStatus(msg, isWarning = false) {
   els.checkinStatus.textContent = msg;
   els.checkinStatus.className = `status-bar${isWarning ? ' warning' : ''}`;
   els.checkinStatus.classList.remove('hidden');
 }
 
-// ── Textarea auto-resize ───────────────────────────────────────────────────
-
 function autoResizeTextarea(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 180) + 'px';
 }
 
-// ── Loading ────────────────────────────────────────────────────────────────
-
 function showLoading(show) {
   els.loading.classList.toggle('hidden', !show);
 }
 
-// ── Aims ───────────────────────────────────────────────────────────────────
-
-let currentAimId = null;
-
-async function loadCurrentAim() {
-  try {
-    const { aim } = await get('/api/aims/current');
-    currentAimId = aim ? aim.id : null;
-
-    if (aim) {
-      const ageMs = Date.now() - new Date(aim.start_date).getTime();
-      const days = Math.round(ageMs / 86400000);
-      els.aimDisplay.innerHTML = `
-        <div class="aim-card">
-          ${aim.heart_wish ? `<p class="aim-heart-wish">"${escapeHtml(aim.heart_wish)}"</p>` : ''}
-          <p class="aim-statement">${escapeHtml(aim.aim_statement)}</p>
-          <p class="muted" style="font-size:13px">
-            Started: ${aim.start_date}${aim.end_date ? ` · Ends: ${aim.end_date}` : ''} · Day ${days}
-            ${aim.accountability_person ? `<br>Accountable to: ${escapeHtml(aim.accountability_person)}` : ''}
-          </p>
-          <div class="connect-row" style="margin-top:8px">
-            <button class="btn-secondary" onclick="openReflectModal()">Reflect today</button>
-            <button class="btn-danger" onclick="completeAim()">Mark complete</button>
-          </div>
-        </div>
-      `;
-    } else {
-      els.aimDisplay.innerHTML = '<p class="muted" style="font-size:14px">No active aim. Use the morning or evening conversation to explore what your heart is wanting, then set it here.</p>';
-    }
-  } catch {
-    els.aimDisplay.innerHTML = '<p class="muted">Could not load aim.</p>';
-  }
-}
-
-function showAimForm() {
-  const today = new Date().toISOString().slice(0, 10);
-  els.aimStartDate.value = today;
-  els.aimForm.classList.remove('hidden');
-  $('aim-actions').classList.add('hidden');
-}
-
-function hideAimForm() {
-  els.aimForm.classList.add('hidden');
-  $('aim-actions').classList.remove('hidden');
-}
-
-async function saveAim() {
-  const aimStatement = els.aimStatement.value.trim();
-  if (!aimStatement) {
-    alert('Please enter an aim statement.');
-    return;
-  }
-
-  try {
-    await post('/api/aims', {
-      heart_wish: els.aimHeartWish.value.trim() || null,
-      aim_statement: aimStatement,
-      start_date: els.aimStartDate.value || new Date().toISOString().slice(0, 10),
-      end_date: els.aimEndDate.value || null,
-      accountability_person: els.aimAccountability.value.trim() || null,
-    });
-    hideAimForm();
-    els.aimHeartWish.value = '';
-    els.aimStatement.value = '';
-    els.aimEndDate.value = '';
-    els.aimAccountability.value = '';
-    await loadCurrentAim();
-  } catch (err) {
-    alert('Error saving aim: ' + err.message);
-  }
-}
-
-window.completeAim = async function () {
-  if (!currentAimId) return;
-  if (!confirm('Mark this aim as complete?')) return;
-  await patch(`/api/aims/${currentAimId}`, { status: 'completed' });
-  await loadCurrentAim();
-};
-
-window.openReflectModal = function () {
-  if (!currentAimId) return;
-  const practiceHappened = confirm('Did you engage with your aim practice today?\n\nOK = Yes, Cancel = No');
-  const reflection = prompt('One-line reflection (optional):') || '';
-  post(`/api/aims/${currentAimId}/reflect`, {
-    reflection,
-    practice_happened: practiceHappened,
-  }).then(() => showStatus('Reflection saved.', false)).catch(() => {});
-};
-
 // ── Event Listeners ────────────────────────────────────────────────────────
-
-// Tab switching
-document.querySelectorAll('.tab').forEach((tab) => {
-  tab.addEventListener('click', () => switchView(tab.dataset.view));
-});
 
 // Check-in
 els.sendBtn.addEventListener('click', sendCheckinMessage);
@@ -1031,22 +988,24 @@ els.chatInput.addEventListener('keydown', (e) => {
 });
 els.chatInput.addEventListener('input', () => autoResizeTextarea(els.chatInput));
 
-// Generate dashboard buttons
+// Generate dashboard
 els.genDashBtn.addEventListener('click', generateDashboard);
-els.genDashBtn2.addEventListener('click', generateDashboard);
-
-// Quick mode — directly generates dashboard without requiring a check-in message
 els.quickModeBtn.addEventListener('click', generateDashboard);
 
-// Midday
-els.middaySendBtn.addEventListener('click', sendMiddayMessage);
-els.middayInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMiddayMessage();
-  }
+// Evening prompt banner → open secondary at Evening tab
+els.eveningPromptBtn.addEventListener('click', () => openSecondary('evening'));
+
+// More bar
+els.moreBtn.addEventListener('click', () => openSecondary(state.currentSecondary));
+
+// Secondary panel tabs
+document.querySelectorAll('.secondary-tab').forEach((tab) => {
+  tab.addEventListener('click', () => switchSecondaryTab(tab.dataset.sec));
 });
-els.middayInput.addEventListener('input', () => autoResizeTextarea(els.middayInput));
+
+// Close secondary
+els.closeSecondaryBtn.addEventListener('click', closeSecondary);
+els.secondaryOverlay.addEventListener('click', closeSecondary);
 
 // Evening
 els.eveningSendBtn.addEventListener('click', sendEveningMessage);
@@ -1058,6 +1017,16 @@ els.eveningInput.addEventListener('keydown', (e) => {
 });
 els.eveningInput.addEventListener('input', () => autoResizeTextarea(els.eveningInput));
 els.completeDayBtn.addEventListener('click', completeDay);
+
+// Midday
+els.middaySendBtn.addEventListener('click', sendMiddayMessage);
+els.middayInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMiddayMessage();
+  }
+});
+els.middayInput.addEventListener('input', () => autoResizeTextarea(els.middayInput));
 
 // Reflect
 els.reflectSendBtn.addEventListener('click', sendReflectMessage);
@@ -1104,11 +1073,6 @@ els.addTrackedBtn.addEventListener('click', async () => {
 els.newTrackedItem.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') els.addTrackedBtn.click();
 });
-
-// Aims
-els.aimNewBtn.addEventListener('click', showAimForm);
-els.aimCancelBtn.addEventListener('click', hideAimForm);
-els.aimSaveBtn.addEventListener('click', saveAim);
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
