@@ -93,6 +93,14 @@ async function initializeSchema() {
       content TEXT NOT NULL,
       updated_at TIMESTAMP DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS oura_tokens (
+      id SERIAL PRIMARY KEY,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expiry_date BIGINT,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
   `);
 }
 
@@ -373,6 +381,25 @@ async function getAimHistory(limit = 10) {
   return result.rows;
 }
 
+// ─── Oura Tokens ──────────────────────────────────────────────────────────────
+
+async function saveOuraToken(accessToken, refreshToken, expiryDate) {
+  await pool.query('DELETE FROM oura_tokens');
+  await pool.query(
+    'INSERT INTO oura_tokens (access_token, refresh_token, expiry_date) VALUES ($1, $2, $3)',
+    [accessToken, refreshToken, expiryDate || null]
+  );
+}
+
+async function getOuraToken() {
+  const result = await pool.query('SELECT * FROM oura_tokens ORDER BY updated_at DESC LIMIT 1');
+  return result.rows[0] || null;
+}
+
+async function deleteOuraToken() {
+  await pool.query('DELETE FROM oura_tokens');
+}
+
 // ─── Orientation ──────────────────────────────────────────────────────────────
 
 async function getOrientation() {
@@ -430,6 +457,10 @@ module.exports = {
   addAimReflection,
   getAimReflections,
   getAimHistory,
+  // Oura tokens
+  saveOuraToken,
+  getOuraToken,
+  deleteOuraToken,
   // Orientation
   getOrientation,
   setOrientation,

@@ -9,6 +9,7 @@ const db = require('./src/database');
 const gmail = require('./src/gmail');
 const calendar = require('./src/calendar');
 const claude = require('./src/claude');
+const oura = require('./src/oura');
 
 const app = express();
 const NZ_TZ = 'Pacific/Auckland';
@@ -26,7 +27,7 @@ app.use(cors({ origin: process.env.ALLOWED_ORIGIN || true, credentials: true }))
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'morning-system-dev-secret',
+    secret: process.env.SESSION_SECRET || 'daily-orientation-dev-secret',
     resave: false,
     saveUninitialized: false,
     cookie: { secure: process.env.NODE_ENV === 'production', maxAge: 7 * 24 * 60 * 60 * 1000 },
@@ -49,7 +50,7 @@ function getNZDateStr() {
 }
 
 async function buildContext(dateStr) {
-  const [calEvents, emailData, snapshot, trackedItems, lifeWheelScores, currentAim, orientationRow] = await Promise.all([
+  const [calEvents, emailData, snapshot, trackedItems, lifeWheelScores, currentAim, orientationRow, ouraData] = await Promise.all([
     calendar.fetchAllAccountsEvents(dateStr),
     gmail.fetchAllAccountsEmails(),
     db.getLatestSnapshot(),
@@ -57,6 +58,7 @@ async function buildContext(dateStr) {
     db.getLatestLifeWheelScores(14),
     db.getCurrentAim(),
     db.getOrientation(),
+    oura.fetchOuraData(dateStr),
   ]);
 
   const recent = await db.getRecentSessions(7);
@@ -85,9 +87,10 @@ async function buildContext(dateStr) {
     currentAim,
     needsAimFormation,
     orientation: orientationRow ? orientationRow.content : null,
+    ouraData,
   });
 
-  return { contextBlock, calEvents, emails: emailData.emails, starredEmails: emailData.starredEmails, snapshot, trackedItems };
+  return { contextBlock, calEvents, emails: emailData.emails, starredEmails: emailData.starredEmails, snapshot, trackedItems, ouraData };
 }
 
 // ─── Routes: Static & Auth ────────────────────────────────────────────────────
@@ -135,6 +138,43 @@ app.get('/api/accounts', async (req, res) => {
 
 app.delete('/api/accounts/:email', async (req, res) => {
   await db.deleteGoogleToken(req.params.email);
+  res.json({ ok: true });
+});
+
+// ─── Routes: Oura OAuth ───────────────────────────────────────────────────────
+
+app.get('/auth/oura', (req, res) => {
+  const redirectUri = `${req.protocol}://${req.get('host')}/auth/oura/callback`;
+  res.redirect(oura.getAuthUrl(redirectUri));
+});
+
+app.get('/auth/oura/callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.redirect('/?error=no_code');
+
+  try {
+    const redirectUri = `${req.protocol}://${req.get('host')}/auth/oura/callback`;
+    const tokens = await oura.exchangeCodeForTokens(code, redirectUri);
+    const expiryDate = Date.now() + (tokens.expires_in || 86400) * 1000;
+    await db.saveOuraToken(tokens.access_token, tokens.refresh_token, expiryDate);
+    res.redirect('/?oura_connected=true');
+  } catch (err) {
+    console.error('Oura OAuth callback error:', err);
+    res.redirect('/?error=oura_failed');
+  }
+});
+
+app.get('/api/oura/status', async (req, res) => {
+  try {
+    const connected = await oura.isConnected();
+    res.json({ connected });
+  } catch {
+    res.json({ connected: false });
+  }
+});
+
+app.delete('/api/oura', async (req, res) => {
+  await db.deleteOuraToken();
   res.json({ ok: true });
 });
 
@@ -708,7 +748,7 @@ db.initializeSchema()
       console.log('Orientation document seeded');
     }
     app.listen(PORT, () => {
-      console.log(`Morning System running on port ${PORT}`);
+      console.log(`Daily Orientation running on port ${PORT}`);
       console.log(`NZ date: ${getNZDateStr()}`);
     });
   })

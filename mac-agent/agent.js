@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Morning System — Mac Background Agent
+ * Daily Orientation — Mac Background Agent
  *
  * Runs every 30 minutes (via launchd).
  * Extracts Apple Notes and Reminders via AppleScript,
@@ -178,7 +178,7 @@ async function tryExportToJournal() {
 // ── Main ───────────────────────────────────────────────────────────────────
 
 async function main() {
-  log('Starting extraction');
+  log('Daily Orientation — starting extraction');
 
   if (!CLOUD_URL) {
     logError('CLOUD_URL not set in .env');
